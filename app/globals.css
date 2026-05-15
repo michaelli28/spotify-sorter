@@ -32,11 +32,15 @@
   --spacing-2xl: 4rem;
   --spacing-3xl: 6rem;
 
-  /* Typography */
+  /* Typography
+     Display falls back to system serif until Editorial New woff2 is dropped into app/fonts/
+     (see app/fonts/README.md). Body and mono use Geist (free, npm-shipped, not in the
+     banned list), with PP Neue Montreal as the intended swap-in. */
   --font-display:
-    "Editorial New", "Spectral", "Iowan Old Style", Georgia, serif;
-  --font-body: "PP Neue Montreal", system-ui, "Geist", sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, monospace;
+    "Editorial New", "Iowan Old Style", "Hoefler Text", Garamond, Georgia, serif;
+  --font-body:
+    var(--font-geist-sans), "PP Neue Montreal", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
 }
 
 html,
