@@ -1,26 +1,56 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Surfaces — deep coffee-brown, never pure black */
+  --color-bg-base: oklch(0.16 0.012 55);
+  --color-bg-surface: oklch(0.2 0.014 55);
+  --color-bg-elevated: oklch(0.24 0.016 55);
+  --color-border-default: oklch(0.3 0.018 55);
+  --color-border-strong: oklch(0.4 0.022 55);
+
+  /* Text — warm cream → muted amber → tertiary */
+  --color-text-primary: oklch(0.95 0.014 70);
+  --color-text-secondary: oklch(0.72 0.02 65);
+  --color-text-tertiary: oklch(0.52 0.025 60);
+
+  /* Accent — brass/amber, the 10% */
+  --color-accent: oklch(0.74 0.14 55);
+  --color-accent-strong: oklch(0.8 0.16 55);
+  --color-accent-soft: oklch(0.62 0.1 55);
+
+  /* Semantic — muted, never neon */
+  --color-success: oklch(0.66 0.12 145);
+  --color-danger: oklch(0.62 0.2 25);
+  --color-warning: oklch(0.75 0.13 80);
+
+  /* Spacing — 4pt scale, semantic only */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2.5rem;
+  --spacing-2xl: 4rem;
+  --spacing-3xl: 6rem;
+
+  /* Typography */
+  --font-display:
+    "Editorial New", "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-body: "PP Neue Montreal", system-ui, "Geist", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-feature-settings:
+    "kern" 1,
+    "liga" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-bg-base);
 }
