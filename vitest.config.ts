@@ -25,7 +25,12 @@ export default defineConfig({
         ".next/**",
       ],
     },
-    include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
+    include: [
+      "tests/unit/**/*.test.ts",
+      "tests/unit/**/*.test.tsx",
+      "tests/integration/**/*.test.ts",
+      "tests/integration/**/*.test.tsx",
+    ],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, ".") },
