@@ -104,4 +104,20 @@ describe("runScan", () => {
     expect(Object.keys(cache.tracks).sort()).toEqual(["t1", "t2"]);
     expect(cache.artists["a1"]!.genres).toContain("hip hop");
   });
+
+  it("throws EMPTY_LIBRARY when zero tracks in scope", async () => {
+    await writeCache(
+      join(dir, "cache.json"),
+      patchCache(defaultCache(), {
+        scope: {
+          included_playlist_ids: [],
+          excluded_playlist_ids: [],
+          include_liked_songs: false,
+        },
+      }),
+    );
+    await expect(runScan({ accessToken: "AT" })).rejects.toThrow(
+      /EMPTY_LIBRARY/,
+    );
+  });
 });

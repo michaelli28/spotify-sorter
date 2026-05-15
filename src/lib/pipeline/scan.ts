@@ -46,6 +46,9 @@ export async function runScan(opts: {
   }
 
   const unique = dedupeTracks(all);
+  if (unique.length === 0) {
+    throw new Error("EMPTY_LIBRARY");
+  }
   const artistIds = Array.from(new Set(unique.map((t) => t.artist_id)));
   onProgress("artists", 0, artistIds.length);
   const artists = await fetchArtists(artistIds, opts.accessToken);
