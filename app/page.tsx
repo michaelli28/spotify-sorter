@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageShell } from "@/src/components/design/PageShell";
 import { Button } from "@/src/components/design/Button";
+import { ResumePrompt } from "@/src/components/shared/ResumePrompt";
 
 export default function Home() {
   return (
@@ -20,6 +21,7 @@ export default function Home() {
         <Link href="/api/auth/login">
           <Button>Connect Spotify</Button>
         </Link>
+        <ResumePrompt />
       </div>
     </PageShell>
   );
