@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <PageShell>
       <div className="mt-32 max-w-2xl">
-        <p className="text-xs uppercase tracking-[0.25em] text-[var(--color-text-tertiary)] mb-6">
+        <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-6">
           A private record-listening room.
         </p>
         <h1 className="font-[family-name:var(--font-display)] text-7xl text-[var(--color-text-primary)] leading-[0.95] tracking-tight mb-12">

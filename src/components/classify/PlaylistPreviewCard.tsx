@@ -33,7 +33,7 @@ export function PlaylistPreviewCard({ card, expanded, onToggleExpand }: Props) {
       ref={setNodeRef}
       layout
       className={clsx(
-        "bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] p-6 transition-colors",
+        "bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] p-8 transition-colors",
         isOver && "border-[var(--color-accent)]",
       )}
     >

@@ -102,7 +102,7 @@ export default function ScopePage() {
               </motion.div>
             ))}
           </motion.div>
-          <div className="pt-12">
+          <div className="pt-16">
             <Button onClick={scan}>Scan</Button>
           </div>
         </>

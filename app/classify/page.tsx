@@ -157,7 +157,7 @@ export default function ClassifyPage() {
           ))}
         </motion.div>
       </DndContext>
-      <div className="pt-12">
+      <div className="pt-16">
         <Button
           onClick={async () => {
             await fetch("/api/cache", {

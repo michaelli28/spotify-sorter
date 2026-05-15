@@ -147,7 +147,7 @@ export default function ReviewPage() {
           }
         />
       </motion.div>
-      <div className="pt-12 flex items-center gap-8">
+      <div className="pt-16 flex items-center gap-8">
         <Button
           onClick={() => setConfirming(true)}
           disabled={running || draft.length === 0}
