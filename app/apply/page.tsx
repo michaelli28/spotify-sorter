@@ -1,0 +1,132 @@
+"use client";
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { PageShell } from "@/src/components/design/PageShell";
+import { Button } from "@/src/components/design/Button";
+import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { ApplyConfirmationModal } from "@/src/components/apply/ApplyConfirmationModal";
+import { SuccessCredits } from "@/src/components/apply/SuccessCredits";
+import { categoryMembers } from "@/src/lib/classification/threshold";
+
+interface DoneResult {
+  created: number;
+  updated: number;
+  tracks_added: number;
+  playlists: Array<{
+    id: string;
+    name: string;
+    track_count: number;
+    created: boolean;
+  }>;
+}
+
+export default function ApplyPage() {
+  const [confirmOpen, setConfirmOpen] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 1, name: "" });
+  const [done, setDone] = useState<DoneResult | null>(null);
+  const [preview, setPreview] = useState({
+    toCreate: 0,
+    toUpdate: 0,
+    totalTracks: 0,
+  });
+
+  useEffect(() => {
+    (async () => {
+      const cache = await fetch("/api/cache").then((r) => r.json());
+      const members = categoryMembers(
+        cache.assignments,
+        cache.config.confidence_threshold,
+      );
+      let toCreate = 0,
+        toUpdate = 0;
+      for (const cat of Object.values(cache.categories) as Array<{
+        spotify_playlist_id: string | null;
+      }>) {
+        if (cat.spotify_playlist_id) toUpdate++;
+        else toCreate++;
+      }
+      let totalTracks = 0;
+      for (const set of members.values()) totalTracks += set.size;
+      setPreview({ toCreate, toUpdate, totalTracks });
+    })();
+  }, []);
+
+  function start() {
+    setConfirmOpen(false);
+    setRunning(true);
+    const es = new EventSource("/api/spotify/apply");
+    es.addEventListener("progress", (e) =>
+      setProgress(JSON.parse((e as MessageEvent).data)),
+    );
+    es.addEventListener("done", (e) => {
+      setDone(JSON.parse((e as MessageEvent).data));
+      es.close();
+    });
+    es.addEventListener("error", () => es.close());
+  }
+
+  if (done) {
+    return (
+      <PageShell>
+        <SuccessCredits
+          playlists={done.playlists}
+          summary={{
+            created: done.created,
+            updated: done.updated,
+            tracks_added: done.tracks_added,
+          }}
+        />
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell
+      eyebrow={running ? "Writing to Spotify" : "Ready"}
+      title={running ? "Adding tracks…" : "About to apply."}
+    >
+      <AnimatePresence mode="wait">
+        {running && (
+          <motion.div
+            key="run"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="max-w-xl space-y-6"
+          >
+            <ProgressBar value={progress.done} total={progress.total} />
+            <p className="text-[var(--color-text-secondary)]">
+              {progress.name ? `Adding to "${progress.name}"…` : "Starting…"} (
+              {progress.done}/{progress.total})
+            </p>
+          </motion.div>
+        )}
+        {!running && !done && (
+          <motion.div
+            key="ready"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-6"
+          >
+            <p className="text-[var(--color-text-secondary)] max-w-xl">
+              When you&apos;re ready, we&apos;ll create your new playlists.
+            </p>
+            <Button onClick={() => setConfirmOpen(true)}>
+              Review and apply
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <ApplyConfirmationModal
+        open={confirmOpen}
+        toCreate={preview.toCreate}
+        toUpdate={preview.toUpdate}
+        totalTracks={preview.totalTracks}
+        onConfirm={start}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </PageShell>
+  );
+}
