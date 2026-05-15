@@ -37,7 +37,7 @@ export function CostPreviewModal({
             <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-3">
               Cost estimate
             </div>
-            <div className="font-[family-name:var(--font-display)] text-5xl text-[var(--color-text-primary)] mb-6">
+            <div className="font-[family-name:var(--font-display)] text-5xl tracking-tight text-[var(--color-text-primary)] mb-6">
               ${estimateUsd.low.toFixed(2)}
               <span className="text-[var(--color-text-tertiary)]"> — </span>$
               {estimateUsd.high.toFixed(2)}

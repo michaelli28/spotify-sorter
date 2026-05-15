@@ -23,7 +23,7 @@ export function SuccessCredits({ playlists, summary }: Props) {
         <div className="text-xs uppercase tracking-[0.3em] text-[var(--color-text-tertiary)] mb-6">
           Side A
         </div>
-        <h1 className="font-[family-name:var(--font-display)] italic text-7xl leading-[0.95] text-[var(--color-text-primary)] max-w-3xl">
+        <h1 className="font-[family-name:var(--font-display)] italic text-7xl leading-[0.95] tracking-tight text-[var(--color-text-primary)] max-w-3xl">
           {summary.created > 0
             ? `${summary.created} new playlists`
             : "Updated."}
