@@ -21,9 +21,6 @@ export default function ReviewPage() {
 
   useEffect(() => {
     (async () => {
-      const proposed = await fetch("/api/llm/propose", { method: "POST" }).then(
-        (r) => r.json(),
-      );
       const cache = await fetch("/api/cache").then((r) => r.json());
       const lookup: Record<string, TrackLookupEntry> = {};
       for (const [id, t] of Object.entries(
@@ -36,12 +33,37 @@ export default function ReviewPage() {
       }
       setTracks(lookup);
       setTrackCount(Object.keys(lookup).length);
-      setDraft(proposed.categories);
+
+      const existingCategories = Object.entries(
+        cache.categories as Record<
+          string,
+          { name: string; description: string }
+        >,
+      );
+      if (existingCategories.length > 0) {
+        setDraft(
+          existingCategories.map(([id, c]) => ({
+            id,
+            name: c.name,
+            description: c.description,
+            example_track_ids: [],
+          })),
+        );
+      } else {
+        const proposed = await fetch("/api/llm/propose", {
+          method: "POST",
+        }).then((r) => r.json());
+        setDraft(proposed.categories);
+      }
     })();
   }, []);
 
   async function classify() {
     setRunning(true);
+    const cacheBefore = await fetch("/api/cache").then((r) => r.json());
+    const previousCategoryIds = new Set(
+      Object.keys((cacheBefore.categories as Record<string, unknown>) ?? {}),
+    );
     await fetch("/api/cache", {
       method: "PATCH",
       body: JSON.stringify({
@@ -59,6 +81,17 @@ export default function ReviewPage() {
       }),
       headers: { "content-type": "application/json" },
     });
+    const draftCategoryIds = new Set(draft!.map((c) => c.id));
+    const newCategoryIds = Array.from(draftCategoryIds).filter(
+      (id) => !previousCategoryIds.has(id),
+    );
+    if (newCategoryIds.length > 0 && previousCategoryIds.size > 0) {
+      await fetch("/api/llm/reclassify", {
+        method: "POST",
+        body: JSON.stringify({ newCategoryIds }),
+        headers: { "content-type": "application/json" },
+      });
+    }
     router.push("/classify");
   }
 
