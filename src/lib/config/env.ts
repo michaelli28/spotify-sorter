@@ -23,3 +23,7 @@ export function env(): Env {
   cached = parseEnv(process.env);
   return cached;
 }
+
+export function _resetEnvForTests(): void {
+  cached = null;
+}
