@@ -10,12 +10,22 @@ function cachePath(): string {
 }
 
 export async function GET() {
-  const cache = await readCache(cachePath());
-  const { auth, ...safe } = cache;
-  return NextResponse.json({
-    ...safe,
-    auth: auth ? { has_token: true, expires_at: auth.expires_at } : null,
-  });
+  try {
+    const cache = await readCache(cachePath());
+    const { auth, ...safe } = cache;
+    return NextResponse.json({
+      ...safe,
+      auth: auth ? { has_token: true, expires_at: auth.expires_at } : null,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "CacheVersionMismatch") {
+      return NextResponse.json(
+        { error: "cache_version_mismatch" },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 }
 
 export async function PATCH(req: Request) {
