@@ -1,6 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
 export function PageShell({
   children,
@@ -11,13 +12,14 @@ export function PageShell({
   eyebrow?: string;
   title?: string;
 }) {
+  const motionConfig = useMotionConfig();
   return (
     <main className="min-h-screen px-12 py-16 max-w-5xl mx-auto">
       {(eyebrow || title) && (
         <motion.header
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          transition={motionConfig.pageEase}
           className="mb-16"
         >
           {eyebrow && (
