@@ -59,7 +59,13 @@ Return JSON only: { "scores": [ { "track_id": "string", "score": 0-100 } ] }`;
     .join("")
     .trim();
   const parsed = ReclassifySchema.parse(JSON.parse(text));
-  const cost = costFromUsage(resp.usage);
+  const cost = costFromUsage({
+    input_tokens: resp.usage.input_tokens,
+    output_tokens: resp.usage.output_tokens,
+    cache_read_input_tokens: resp.usage.cache_read_input_tokens ?? undefined,
+    cache_creation_input_tokens:
+      resp.usage.cache_creation_input_tokens ?? undefined,
+  });
 
   await logLLMCall({
     model: MODEL,
