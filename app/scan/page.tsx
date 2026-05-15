@@ -55,8 +55,16 @@ export default function ScanPage() {
 
   useEffect(() => {
     if (done) {
-      const id = setTimeout(() => router.push("/review"), 800);
-      return () => clearTimeout(id);
+      let cancelled = false;
+      (async () => {
+        const cache = await fetch("/api/cache").then((r) => r.json());
+        const isRerun = Array.isArray(cache.runs) && cache.runs.length > 0;
+        if (cancelled) return;
+        setTimeout(() => router.push(isRerun ? "/diff" : "/review"), 800);
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
   }, [done, router]);
 
