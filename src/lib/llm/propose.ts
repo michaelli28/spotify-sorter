@@ -64,7 +64,8 @@ async function callOnce(
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userMsg }],
     temperature: reminder ? 0.0 : 0.4,
-  } as Parameters<typeof client.messages.create>[0]);
+    stream: false,
+  });
   const text = resp.content
     .map((c) => (c.type === "text" ? c.text : ""))
     .join("")
