@@ -85,6 +85,7 @@ async function callOnce(
   const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 4_000,
+    stream: false,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
     ],
@@ -92,7 +93,7 @@ async function callOnce(
       { role: "user", content: reminder ? `${reminder}\n\n${user}` : user },
     ],
     temperature: reminder ? 0.0 : 0.3,
-  } as Parameters<typeof client.messages.create>[0]);
+  });
   const text = resp.content
     .map((c) => (c.type === "text" ? c.text : ""))
     .join("")
