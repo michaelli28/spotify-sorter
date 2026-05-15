@@ -1,4 +1,5 @@
 "use client";
+import { Fragment } from "react";
 import { motion } from "framer-motion";
 
 interface Props {
@@ -23,7 +24,12 @@ export function SuccessCredits({ playlists, summary }: Props) {
         <div className="text-xs uppercase tracking-[0.3em] text-[var(--color-text-tertiary)] mb-6">
           Side A
         </div>
-        <h1 className="font-[family-name:var(--font-display)] italic text-7xl leading-[0.95] tracking-tight text-[var(--color-text-primary)] max-w-3xl">
+        <motion.h1
+          className="font-[family-name:var(--font-display)] italic text-7xl leading-[0.95] tracking-tight text-[var(--color-text-primary)] max-w-3xl"
+          initial={{ letterSpacing: "0" }}
+          animate={{ letterSpacing: "-0.01em" }}
+          transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+        >
           {summary.created > 0
             ? `${summary.created} new playlists`
             : "Updated."}
@@ -31,7 +37,7 @@ export function SuccessCredits({ playlists, summary }: Props) {
           <span className="not-italic text-[var(--color-text-secondary)] text-5xl">
             {summary.tracks_added} tracks placed.
           </span>
-        </h1>
+        </motion.h1>
       </motion.div>
 
       <motion.ol
@@ -45,27 +51,41 @@ export function SuccessCredits({ playlists, summary }: Props) {
         }}
       >
         {ordered.map((p, i) => (
-          <motion.li
-            key={p.id}
-            variants={{
-              hidden: { opacity: 0, y: 6 },
-              visible: { opacity: 1, y: 0 },
-            }}
-            className="flex items-baseline gap-6 py-3 border-b border-[var(--color-border-default)]"
-          >
-            <span className="font-[family-name:var(--font-mono)] text-xs text-[var(--color-text-tertiary)] w-10">
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <a
-              href={`spotify:playlist:${p.id}`}
-              className="flex-1 font-[family-name:var(--font-display)] text-2xl text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+          <Fragment key={p.id}>
+            {i === 12 && ordered.length > 12 && (
+              <motion.li
+                variants={{
+                  hidden: { opacity: 0 },
+                  visible: { opacity: 1 },
+                }}
+                className="py-4 border-b border-[var(--color-border-default)]"
+              >
+                <span className="text-xs uppercase tracking-[0.3em] text-[var(--color-text-tertiary)]">
+                  Side B.
+                </span>
+              </motion.li>
+            )}
+            <motion.li
+              variants={{
+                hidden: { opacity: 0, y: 6 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="flex items-baseline gap-6 py-3 border-b border-[var(--color-border-default)]"
             >
-              {p.name}
-            </a>
-            <span className="font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]">
-              {p.track_count}
-            </span>
-          </motion.li>
+              <span className="font-[family-name:var(--font-mono)] text-xs text-[var(--color-text-tertiary)] w-10">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <a
+                href={`spotify:playlist:${p.id}`}
+                className="flex-1 font-[family-name:var(--font-display)] text-2xl text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+              >
+                {p.name}
+              </a>
+              <span className="font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]">
+                {p.track_count}
+              </span>
+            </motion.li>
+          </Fragment>
         ))}
       </motion.ol>
 
