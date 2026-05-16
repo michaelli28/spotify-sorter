@@ -16,7 +16,9 @@ afterEach(() => {
 
 describe("GET /api/auth/login", () => {
   it("redirects to Spotify authorize with PKCE + sets cookies", async () => {
-    const req = new Request("http://127.0.0.1:3000/api/auth/login");
+    const req = new Request("http://127.0.0.1:3000/api/auth/login", {
+      headers: { host: "127.0.0.1:3000" },
+    });
     const res = await GET(req);
     expect(res.status).toBe(307);
     const loc = res.headers.get("location")!;

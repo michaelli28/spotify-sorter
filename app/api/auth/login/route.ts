@@ -5,8 +5,14 @@ import { createVerifier, deriveChallenge } from "@/src/lib/spotify/pkce";
 import { buildAuthorizeUrl } from "@/src/lib/spotify/auth";
 
 const REDIRECT_URI = "http://127.0.0.1:3000/api/auth/callback";
+const CANONICAL_ORIGIN = "http://127.0.0.1:3000";
 
-export async function GET(_req: Request) {
+export async function GET(req: Request) {
+  const host = req.headers.get("host") ?? "";
+  if (host !== "127.0.0.1:3000") {
+    return NextResponse.redirect(`${CANONICAL_ORIGIN}/api/auth/login`, 307);
+  }
+
   const verifier = createVerifier();
   const challenge = await deriveChallenge(verifier);
   const state = randomBytes(16).toString("base64url");

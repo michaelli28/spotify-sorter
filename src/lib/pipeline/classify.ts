@@ -59,9 +59,15 @@ export async function runClassifyFromCache(opts: {
 
   let totalCost = 0;
   let doneBatches = 0;
-  const allAssignments: Awaited<
-    ReturnType<typeof classifyBatch>
-  >["assignments"] = [];
+  let newAssignments = 0;
+  const merged = { ...cache.assignments };
+
+  let writeChain: Promise<unknown> = Promise.resolve();
+  const enqueueWrite = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = writeChain.then(fn, fn);
+    writeChain = next.catch(() => undefined);
+    return next as Promise<T>;
+  };
 
   await pool.runAll(
     batches.map((batch) => async () => {
@@ -72,10 +78,30 @@ export async function runClassifyFromCache(opts: {
             categories,
             tracks: batch,
           });
-          allAssignments.push(...r.assignments);
+          const now = new Date().toISOString();
+          await enqueueWrite(async () => {
+            for (const a of r.assignments) {
+              merged[a.track_id] = {
+                matches: a.matches,
+                reasoning: a.reasoning,
+                classified_at: now,
+                override: null,
+              };
+            }
+            await writeCache(
+              cachePath,
+              patchCache(cache, { assignments: { ...merged } }),
+            );
+          });
+          newAssignments += r.assignments.length;
           totalCost += r.cost_usd;
           doneBatches++;
-          onProgress("batch", doneBatches, batches.length);
+          try {
+            onProgress("batch", doneBatches, batches.length);
+          } catch {
+            // Progress reporting must never abort batch processing
+            // (e.g. client disconnected the SSE stream).
+          }
           return;
         } catch (err) {
           const e = err as { status?: number };
@@ -89,17 +115,5 @@ export async function runClassifyFromCache(opts: {
     }),
   );
 
-  const now = new Date().toISOString();
-  const merged = { ...cache.assignments };
-  for (const a of allAssignments) {
-    merged[a.track_id] = {
-      matches: a.matches,
-      reasoning: a.reasoning,
-      classified_at: now,
-      override: null,
-    };
-  }
-  await writeCache(cachePath, patchCache(cache, { assignments: merged }));
-
-  return { tracks_classified: allAssignments.length, cost_usd: totalCost };
+  return { tracks_classified: newAssignments, cost_usd: totalCost };
 }

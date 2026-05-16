@@ -16,6 +16,10 @@ export interface ProposeResult {
   cost_usd: number;
 }
 
+export interface ProposeProgress {
+  output_tokens: number;
+}
+
 const MODEL = "claude-haiku-4-5-20251001";
 
 const SYSTEM_PROMPT = `You are a sharp-eared music curator helping the user organize their personal Spotify library into themed playlists.
@@ -50,6 +54,7 @@ async function callOnce(
   apiKey: string,
   tracks: ProposeTrackInput[],
   reminder: string | null,
+  onProgress?: (state: ProposeProgress) => void,
 ): Promise<{
   text: string;
   usage: { input_tokens: number; output_tokens: number };
@@ -58,33 +63,56 @@ async function callOnce(
   const userMsg = reminder
     ? `${reminder}\n\n${buildUserMessage(tracks)}`
     : buildUserMessage(tracks);
-  const resp = await client.messages.create({
+  const stream = client.messages.stream({
     model: MODEL,
-    max_tokens: 8_000,
+    max_tokens: 16_000,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userMsg }],
     temperature: reminder ? 0.0 : 0.4,
-    stream: false,
   });
-  const text = resp.content
+  for await (const event of stream) {
+    if (event.type === "message_delta" && event.usage) {
+      try {
+        onProgress?.({ output_tokens: event.usage.output_tokens });
+      } catch {
+        // Progress reporting must never abort the LLM call (e.g. client
+        // disconnected the SSE stream). Persistence happens after this loop.
+      }
+    }
+  }
+  const final = await stream.finalMessage();
+  const text = final.content
     .map((c) => (c.type === "text" ? c.text : ""))
     .join("")
     .trim();
   return {
     text,
     usage: {
-      input_tokens: resp.usage.input_tokens,
-      output_tokens: resp.usage.output_tokens,
+      input_tokens: final.usage.input_tokens,
+      output_tokens: final.usage.output_tokens,
     },
   };
 }
 
+function stripFences(text: string): string {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace > 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+  return trimmed;
+}
+
 function parseOrThrow(text: string) {
+  const cleaned = stripFences(text);
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Propose returned non-JSON: ${text.slice(0, 200)}`);
+    throw new Error(`Propose returned non-JSON: ${cleaned.slice(0, 200)}`);
   }
   return ProposeResponseSchema.parse(json);
 }
@@ -92,9 +120,10 @@ function parseOrThrow(text: string) {
 export async function runPropose(opts: {
   apiKey: string;
   tracks: ProposeTrackInput[];
+  onProgress?: (state: ProposeProgress) => void;
 }): Promise<ProposeResult> {
   const start = Date.now();
-  let attempt = await callOnce(opts.apiKey, opts.tracks, null);
+  let attempt = await callOnce(opts.apiKey, opts.tracks, null, opts.onProgress);
   let retries = 0;
   let parsed;
   try {
@@ -105,6 +134,7 @@ export async function runPropose(opts: {
       opts.apiKey,
       opts.tracks,
       "Your previous response was not valid JSON. Respond with valid JSON ONLY, no markdown fences or prose.",
+      opts.onProgress,
     );
     parsed = parseOrThrow(attempt.text);
   }

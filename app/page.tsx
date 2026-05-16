@@ -2,8 +2,12 @@ import Link from "next/link";
 import { PageShell } from "@/src/components/design/PageShell";
 import { Button } from "@/src/components/design/Button";
 import { ResumePrompt } from "@/src/components/shared/ResumePrompt";
+import { EnvSchema } from "@/src/lib/config/env";
 
 export default function Home() {
+  const configured = EnvSchema.safeParse(process.env).success;
+  const href = configured ? "/api/auth/login" : "/setup";
+  const label = configured ? "Connect Spotify" : "Set up Spotify";
   return (
     <PageShell>
       <div className="mt-32 max-w-2xl">
@@ -18,8 +22,8 @@ export default function Home() {
           sub-genre/mood categories tuned to your taste, and writes them back as
           new playlists in your account. Re-runs are incremental.
         </p>
-        <Link href="/api/auth/login">
-          <Button>Connect Spotify</Button>
+        <Link href={href}>
+          <Button>{label}</Button>
         </Link>
         <ResumePrompt />
       </div>

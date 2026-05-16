@@ -8,9 +8,14 @@ export async function GET() {
     async start(controller) {
       const enc = new TextEncoder();
       const send = (event: string, data: unknown) => {
-        controller.enqueue(
-          enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-        );
+        try {
+          controller.enqueue(
+            enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
+        } catch {
+          // Stream is closed (client disconnect). Keep the work running so
+          // batch persistence completes.
+        }
       };
       try {
         const r = await runClassifyFromCache({
@@ -24,7 +29,11 @@ export async function GET() {
           message: err instanceof Error ? err.message : "unknown",
         });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
       }
     },
   });

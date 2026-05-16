@@ -84,7 +84,7 @@ async function callOnce(
   const client = anthropicClient(apiKey);
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 4_000,
+    max_tokens: 16_000,
     stream: false,
     system: [
       { type: "text", text: system, cache_control: { type: "ephemeral" } },
@@ -102,12 +102,25 @@ async function callOnce(
   return { text, usage: u };
 }
 
+function stripFences(text: string): string {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace > 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+  return trimmed;
+}
+
 function parseOrThrow(text: string) {
+  const cleaned = stripFences(text);
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Classify returned non-JSON: ${text.slice(0, 200)}`);
+    throw new Error(`Classify returned non-JSON: ${cleaned.slice(0, 200)}`);
   }
   return ClassifyResponseSchema.parse(json);
 }

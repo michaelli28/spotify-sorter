@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
@@ -28,6 +28,15 @@ export default function SetupPage() {
     prefix: "✨",
   });
   const [validating, setValidating] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((d: { configured: boolean }) => {
+        if (d.configured) router.replace("/");
+      })
+      .catch(() => {});
+  }, [router]);
 
   const idx = STEPS.indexOf(step);
   const canAdvance = (() => {

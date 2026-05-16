@@ -9,11 +9,12 @@ import {
   beforeEach,
 } from "vitest";
 import { setupServer } from "msw/node";
-import { http, HttpResponse } from "msw";
+import { http } from "msw";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runPropose } from "@/src/lib/llm/propose";
+import { anthropicSseResponse } from "../helpers/sse-mock";
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -30,34 +31,25 @@ afterEach(async () => {
   delete process.env.SORTER_DATA_DIR;
 });
 
-const validResponse = {
-  id: "msg_x",
-  type: "message",
-  role: "assistant",
-  content: [
+const validJson = JSON.stringify({
+  categories: [
     {
-      type: "text",
-      text: JSON.stringify({
-        categories: [
-          {
-            name: "Aesthetic Rap",
-            description: "Cloud rap",
-            example_track_ids: ["t1"],
-          },
-        ],
-      }),
+      name: "Aesthetic Rap",
+      description: "Cloud rap",
+      example_track_ids: ["t1"],
     },
   ],
-  model: "claude-haiku-4-5-20251001",
-  stop_reason: "end_turn",
-  usage: { input_tokens: 1500, output_tokens: 300 },
-};
+});
 
 describe("runPropose", () => {
   it("parses propose JSON and returns categories with assigned ids", async () => {
     server.use(
       http.post("https://api.anthropic.com/v1/messages", () =>
-        HttpResponse.json(validResponse),
+        anthropicSseResponse({
+          text: validJson,
+          input_tokens: 1500,
+          output_tokens: 300,
+        }),
       ),
     );
     const result = await runPropose({
@@ -85,12 +77,17 @@ describe("runPropose", () => {
       http.post("https://api.anthropic.com/v1/messages", () => {
         call++;
         if (call === 1) {
-          return HttpResponse.json({
-            ...validResponse,
-            content: [{ type: "text", text: "not json at all" }],
+          return anthropicSseResponse({
+            text: "not json at all",
+            input_tokens: 1500,
+            output_tokens: 50,
           });
         }
-        return HttpResponse.json(validResponse);
+        return anthropicSseResponse({
+          text: validJson,
+          input_tokens: 1500,
+          output_tokens: 300,
+        });
       }),
     );
     const result = await runPropose({
@@ -101,12 +98,36 @@ describe("runPropose", () => {
     expect(result.categories).toHaveLength(1);
   });
 
+  it("completes the LLM call even when onProgress throws (client disconnect)", async () => {
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () =>
+        anthropicSseResponse({
+          text: validJson,
+          input_tokens: 1500,
+          output_tokens: 300,
+        }),
+      ),
+    );
+    let progressCalls = 0;
+    const result = await runPropose({
+      apiKey: "sk-ant-x",
+      tracks: [{ id: "t1", title: "X", artist_name: "Y", genres: [] }],
+      onProgress: () => {
+        progressCalls++;
+        throw new Error("client disconnected");
+      },
+    });
+    expect(result.categories).toHaveLength(1);
+    expect(progressCalls).toBeGreaterThan(0);
+  });
+
   it("throws after second malformed response", async () => {
     server.use(
       http.post("https://api.anthropic.com/v1/messages", () =>
-        HttpResponse.json({
-          ...validResponse,
-          content: [{ type: "text", text: "{bad" }],
+        anthropicSseResponse({
+          text: "{bad",
+          input_tokens: 1500,
+          output_tokens: 5,
         }),
       ),
     );

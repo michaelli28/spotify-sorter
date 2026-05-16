@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/src/components/design/PageShell";
 import { DiffBanner } from "@/src/components/shared/DiffBanner";
+import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 
 interface DiffResponse {
   added: string[];
@@ -25,9 +26,10 @@ export default function DiffPage() {
   if (!diff) {
     return (
       <PageShell eyebrow="Comparing" title="Diffing your library…">
-        <p className="text-[var(--color-text-secondary)]">
-          Reading current state.
-        </p>
+        <ThinkingIndicator
+          message="Reading current state."
+          estimateSeconds={5}
+        />
       </PageShell>
     );
   }

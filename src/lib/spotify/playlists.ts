@@ -14,9 +14,9 @@ interface Me {
 interface RawPlaylist {
   id: string;
   name: string;
-  owner: { id: string };
-  tracks: { total: number };
-  images: Array<{ url: string }>;
+  owner: { id: string } | null;
+  tracks: { total: number } | null;
+  images: Array<{ url: string }> | null;
 }
 
 export async function listOwnedPlaylists(
@@ -33,11 +33,11 @@ export async function listOwnedPlaylists(
     { accessToken },
   );
   return all
-    .filter((p) => p.owner.id === me.id)
+    .filter((p) => p?.owner?.id === me.id)
     .map((p) => ({
       id: p.id,
       name: p.name,
-      track_count: p.tracks.total,
-      cover_url: p.images[0]?.url ?? null,
+      track_count: p.tracks?.total ?? 0,
+      cover_url: p.images?.[0]?.url ?? null,
     }));
 }

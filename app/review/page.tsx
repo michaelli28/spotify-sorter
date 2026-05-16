@@ -7,6 +7,7 @@ import { Button } from "@/src/components/design/Button";
 import { MergeableGrid } from "@/src/components/review/MergeableGrid";
 import { AddCategoryForm } from "@/src/components/review/AddCategoryForm";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
+import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 import { estimateCostUSD } from "@/src/lib/llm/cost";
 import type { DraftCategory } from "@/src/lib/categories/merge";
 import type { TrackLookupEntry } from "@/src/components/review/CategoryCard";
@@ -18,10 +19,18 @@ export default function ReviewPage() {
   const [trackCount, setTrackCount] = useState(0);
   const [confirming, setConfirming] = useState(false);
   const [running, setRunning] = useState(false);
+  const [proposeProgress, setProposeProgress] = useState<{
+    output_tokens: number;
+  } | null>(null);
+  const [proposeError, setProposeError] = useState<string | null>(null);
+  const [proposeAttempt, setProposeAttempt] = useState(0);
 
   useEffect(() => {
+    let es: EventSource | null = null;
+    let cancelled = false;
     (async () => {
       const cache = await fetch("/api/cache").then((r) => r.json());
+      if (cancelled) return;
       const lookup: Record<string, TrackLookupEntry> = {};
       for (const [id, t] of Object.entries(
         cache.tracks as Record<string, { title: string; artist_id: string }>,
@@ -49,14 +58,33 @@ export default function ReviewPage() {
             example_track_ids: [],
           })),
         );
-      } else {
-        const proposed = await fetch("/api/llm/propose", {
-          method: "POST",
-        }).then((r) => r.json());
-        setDraft(proposed.categories);
+        return;
       }
+      setProposeError(null);
+      setProposeProgress(null);
+      es = new EventSource("/api/llm/propose");
+      es.addEventListener("progress", (e) =>
+        setProposeProgress(JSON.parse((e as MessageEvent).data)),
+      );
+      es.addEventListener("done", (e) => {
+        const data = JSON.parse((e as MessageEvent).data);
+        setDraft(data.categories);
+        es?.close();
+      });
+      es.addEventListener("error", (e) => {
+        const raw = (e as MessageEvent).data;
+        const message = raw
+          ? (JSON.parse(raw).message ?? "Unknown error")
+          : "Connection lost";
+        setProposeError(message);
+        es?.close();
+      });
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+      es?.close();
+    };
+  }, [proposeAttempt]);
 
   async function classify() {
     setRunning(true);
@@ -96,12 +124,31 @@ export default function ReviewPage() {
   }
 
   if (!draft) {
+    if (proposeError) {
+      return (
+        <PageShell eyebrow="Couldn't propose" title="That call failed.">
+          <div className="max-w-xl space-y-6">
+            <p className="text-[var(--color-text-secondary)]">{proposeError}</p>
+            <Button
+              onClick={() => {
+                setProposeError(null);
+                setProposeProgress(null);
+                setProposeAttempt((n) => n + 1);
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        </PageShell>
+      );
+    }
     return (
       <PageShell eyebrow="Thinking" title="Proposing categories…">
-        <p className="text-[var(--color-text-secondary)]">
-          Claude Haiku is listening through your library. This takes ~30
-          seconds.
-        </p>
+        <ThinkingIndicator
+          message="Claude Haiku is listening through your library."
+          estimateSeconds={Math.max(30, Math.round(trackCount / 30))}
+          outputTokens={proposeProgress?.output_tokens}
+        />
       </PageShell>
     );
   }

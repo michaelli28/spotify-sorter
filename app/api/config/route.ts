@@ -3,6 +3,12 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
+import { EnvSchema } from "@/src/lib/config/env";
+
+export async function GET() {
+  const configured = EnvSchema.safeParse(process.env).success;
+  return NextResponse.json({ configured });
+}
 
 const Body = z.object({
   spotify_client_id: z.string().min(20),
