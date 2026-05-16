@@ -43,7 +43,7 @@ export default function ScanPage() {
       const data = JSON.parse((e as MessageEvent).data ?? "{}");
       if (data.message === "EMPTY_LIBRARY") {
         setError(
-          "Your scope is empty. Add some music to your library, then come back.",
+          "Your scope is empty. Pick some playlists or enable Liked Songs first.",
         );
       } else {
         setError(data.message ?? "Stream interrupted");
@@ -93,6 +93,14 @@ export default function ScanPage() {
                 ? `${done.unique_tracks} unique tracks across ${done.unique_artists} artists.`
                 : `${STAGE_LABEL[progress.stage] ?? progress.stage}… (${progress.current}/${progress.total})`}
           </motion.div>
+          {error && (
+            <a
+              href="/scope"
+              className="inline-block text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
+            >
+              ← Change scope
+            </a>
+          )}
         </AnimatePresence>
       </div>
     </PageShell>

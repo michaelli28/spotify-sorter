@@ -25,6 +25,7 @@ export default function ApplyPage() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 1, name: "" });
   const [done, setDone] = useState<DoneResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState({
     toCreate: 0,
     toUpdate: 0,
@@ -55,6 +56,7 @@ export default function ApplyPage() {
   function start() {
     setConfirmOpen(false);
     setRunning(true);
+    setError(null);
     const es = new EventSource("/api/spotify/apply");
     es.addEventListener("progress", (e) =>
       setProgress(JSON.parse((e as MessageEvent).data)),
@@ -63,7 +65,15 @@ export default function ApplyPage() {
       setDone(JSON.parse((e as MessageEvent).data));
       es.close();
     });
-    es.addEventListener("error", () => es.close());
+    es.addEventListener("error", (e) => {
+      const raw = (e as MessageEvent).data;
+      const message = raw
+        ? (JSON.parse(raw).message ?? "Unknown error")
+        : "Connection lost — Spotify may have rate-limited the app.";
+      setError(message);
+      setRunning(false);
+      es.close();
+    });
   }
 
   if (done) {
@@ -77,6 +87,36 @@ export default function ApplyPage() {
             tracks_added: done.tracks_added,
           }}
         />
+      </PageShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageShell eyebrow="Something broke" title="Apply failed.">
+        <div className="max-w-xl space-y-6">
+          <p className="text-[var(--color-text-secondary)]">{error}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)]">
+            Any tracks already added to playlists are saved. Re-running picks up
+            where it left off.
+          </p>
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={() => {
+                setError(null);
+                start();
+              }}
+            >
+              Try again
+            </Button>
+            <a
+              href="/"
+              className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              Back to start
+            </a>
+          </div>
+        </div>
       </PageShell>
     );
   }

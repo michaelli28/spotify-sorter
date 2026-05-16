@@ -16,12 +16,35 @@ interface DiffResponse {
 export default function DiffPage() {
   const router = useRouter();
   const [diff, setDiff] = useState<DiffResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/spotify/diff")
-      .then((r) => r.json())
-      .then(setDiff);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setDiff)
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Failed to load diff"),
+      );
   }, []);
+
+  if (error) {
+    return (
+      <PageShell eyebrow="Couldn't compare" title="Diff failed.">
+        <div className="max-w-xl space-y-6">
+          <p className="text-[var(--color-text-secondary)]">{error}</p>
+          <a
+            href="/"
+            className="text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
+          >
+            ← Back to start
+          </a>
+        </div>
+      </PageShell>
+    );
+  }
 
   if (!diff) {
     return (
