@@ -2,20 +2,31 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
 
+export interface CacheBreakdown {
+  totalTracks: number;
+  alreadyDone: number;
+  fresh: number;
+  fullCostUsd?: number;
+}
+
 interface Props {
   open: boolean;
   estimateUsd: { low: number; high: number };
   message: string;
+  breakdown?: CacheBreakdown;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmLabel?: string;
 }
 
 export function CostPreviewModal({
   open,
   estimateUsd,
   message,
+  breakdown,
   onConfirm,
   onCancel,
+  confirmLabel = "Proceed",
 }: Props) {
   return (
     <AnimatePresence>
@@ -42,11 +53,41 @@ export function CostPreviewModal({
               <span className="text-[var(--color-text-tertiary)]"> — </span>$
               {estimateUsd.high.toFixed(2)}
             </div>
-            <p className="text-[var(--color-text-secondary)] mb-10">
-              {message}
-            </p>
+            <p className="text-[var(--color-text-secondary)] mb-6">{message}</p>
+            {breakdown && (
+              <div className="mb-8 border-t border-[var(--color-border-default)] pt-5 space-y-1.5 text-sm text-[var(--color-text-secondary)]">
+                <div className="flex justify-between">
+                  <span>Total tracks</span>
+                  <span className="text-[var(--color-text-primary)]">
+                    {breakdown.totalTracks.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Already classified (free)</span>
+                  <span className="text-[var(--color-text-primary)]">
+                    {breakdown.alreadyDone.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>New this run</span>
+                  <span className="text-[var(--color-text-primary)]">
+                    {breakdown.fresh.toLocaleString()}
+                  </span>
+                </div>
+                {breakdown.fullCostUsd !== undefined &&
+                  breakdown.fullCostUsd > estimateUsd.high && (
+                    <div className="flex justify-between pt-2 mt-2 border-t border-[var(--color-border-default)] text-[var(--color-accent)]">
+                      <span>Saved by reusing cache</span>
+                      <span>
+                        ~$
+                        {(breakdown.fullCostUsd - estimateUsd.high).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+              </div>
+            )}
             <div className="flex items-center gap-6">
-              <Button onClick={onConfirm}>Proceed</Button>
+              <Button onClick={onConfirm}>{confirmLabel}</Button>
               <Button variant="ghost" onClick={onCancel}>
                 Not yet
               </Button>

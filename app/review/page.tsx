@@ -12,12 +12,37 @@ import { estimateCostUSD } from "@/src/lib/llm/cost";
 import type { DraftCategory } from "@/src/lib/categories/merge";
 import type { TrackLookupEntry } from "@/src/components/review/CategoryCard";
 
+interface CacheRun {
+  run_id: string;
+  type?: "propose" | "classify";
+  started_at: string;
+  completed_at: string | null;
+  tracks_total: number;
+  tracks_classified: number;
+  cost_usd: number;
+  summary: string;
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function ReviewPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftCategory[] | null>(null);
   const [tracks, setTracks] = useState<Record<string, TrackLookupEntry>>({});
   const [trackCount, setTrackCount] = useState(0);
+  const [assignmentCount, setAssignmentCount] = useState(0);
+  const [runs, setRuns] = useState<CacheRun[]>([]);
   const [confirming, setConfirming] = useState(false);
+  const [reproposing, setReproposing] = useState(false);
   const [running, setRunning] = useState(false);
   const [proposeProgress, setProposeProgress] = useState<{
     output_tokens: number;
@@ -42,6 +67,11 @@ export default function ReviewPage() {
       }
       setTracks(lookup);
       setTrackCount(Object.keys(lookup).length);
+      setAssignmentCount(
+        Object.keys((cache.assignments as Record<string, unknown>) ?? {})
+          .length,
+      );
+      setRuns(((cache.runs as CacheRun[] | undefined) ?? []).slice(-10));
 
       const existingCategories = Object.entries(
         cache.categories as Record<
@@ -123,6 +153,18 @@ export default function ReviewPage() {
     router.push("/classify");
   }
 
+  async function startRepropose() {
+    await fetch("/api/cache", {
+      method: "PATCH",
+      body: JSON.stringify({ _clear: ["categories", "assignments"] }),
+      headers: { "content-type": "application/json" },
+    });
+    setDraft(null);
+    setProposeError(null);
+    setProposeProgress(null);
+    setProposeAttempt((n) => n + 1);
+  }
+
   if (!draft) {
     if (proposeError) {
       return (
@@ -153,12 +195,28 @@ export default function ReviewPage() {
     );
   }
 
+  const tracksLeftToClassify = Math.max(0, trackCount - assignmentCount);
   const lowEst = estimateCostUSD({
-    tracks: trackCount,
+    tracks: tracksLeftToClassify,
     categories: draft.length,
     phase: "classify",
   });
   const highEst = lowEst * 2;
+  const fullCostEst =
+    estimateCostUSD({
+      tracks: trackCount,
+      categories: draft.length,
+      phase: "classify",
+    }) * 2;
+  const lastPropose = [...runs]
+    .reverse()
+    .find((r) => r.type === "propose" || (!r.type && r.cost_usd > 0));
+  const reproposeEst =
+    estimateCostUSD({
+      tracks: trackCount,
+      categories: 0,
+      phase: "propose",
+    }) * 1.2;
   const estimates: Record<string, number> = Object.fromEntries(
     draft.map((c) => [c.id, c.example_track_ids.length]),
   );
@@ -194,26 +252,62 @@ export default function ReviewPage() {
           }
         />
       </motion.div>
-      <div className="pt-16 flex items-center gap-8">
+      <div className="pt-16 flex items-center gap-8 flex-wrap">
         <Button
           onClick={() => setConfirming(true)}
           disabled={running || draft.length === 0}
         >
           {running ? "Classifying…" : "Classify"}
         </Button>
+        <Button
+          variant="ghost"
+          onClick={() => setReproposing(true)}
+          disabled={running}
+        >
+          Re-propose
+        </Button>
         <span className="text-sm text-[var(--color-text-tertiary)]">
           {draft.length} categories · {trackCount} tracks
+          {assignmentCount > 0 && ` · ${assignmentCount} already classified`}
         </span>
       </div>
+      {lastPropose && (
+        <div className="pt-3 text-xs text-[var(--color-text-tertiary)]">
+          Last propose{" "}
+          {timeAgo(lastPropose.completed_at ?? lastPropose.started_at)}
+          {" · "}${lastPropose.cost_usd.toFixed(2)}
+        </div>
+      )}
       <CostPreviewModal
         open={confirming}
         estimateUsd={{ low: lowEst, high: highEst }}
-        message={`About to classify ${trackCount} tracks across ${draft.length} categories using Claude Haiku.`}
+        message={
+          tracksLeftToClassify === 0
+            ? `All ${trackCount} tracks are already classified — Claude won't be called.`
+            : `About to classify ${tracksLeftToClassify} new tracks across ${draft.length} categories using Claude Haiku.`
+        }
+        breakdown={{
+          totalTracks: trackCount,
+          alreadyDone: assignmentCount,
+          fresh: tracksLeftToClassify,
+          fullCostUsd: fullCostEst,
+        }}
         onConfirm={() => {
           setConfirming(false);
           classify();
         }}
         onCancel={() => setConfirming(false)}
+      />
+      <CostPreviewModal
+        open={reproposing}
+        estimateUsd={{ low: reproposeEst * 0.8, high: reproposeEst }}
+        message={`This wipes the current ${draft.length} categories and any track assignments, then asks Claude to invent new ones from your full library (${trackCount} tracks).`}
+        confirmLabel="Wipe & re-propose"
+        onConfirm={async () => {
+          setReproposing(false);
+          await startRepropose();
+        }}
+        onCancel={() => setReproposing(false)}
       />
     </PageShell>
   );

@@ -13,12 +13,24 @@ import {
 import { categoryMembers } from "@/src/lib/classification/threshold";
 import type { Assignment } from "@/src/lib/cache";
 
+interface ClientCacheRun {
+  run_id: string;
+  type?: "propose" | "classify";
+  started_at: string;
+  completed_at: string | null;
+  tracks_total: number;
+  tracks_classified: number;
+  cost_usd: number;
+  summary: string;
+}
+
 interface ClientCache {
   config: { confidence_threshold: number };
   categories: Record<string, { name: string }>;
   tracks: Record<string, { artist_id: string; title: string }>;
   artists: Record<string, { name: string }>;
   assignments: Record<string, Assignment>;
+  runs?: ClientCacheRun[];
 }
 
 export default function ClassifyPage() {
@@ -28,6 +40,8 @@ export default function ClassifyPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(true);
   const [progress, setProgress] = useState({ done: 0, total: 1 });
+  const [latestRun, setLatestRun] = useState<ClientCacheRun | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
     const es = new EventSource("/api/llm/classify");
@@ -40,6 +54,10 @@ export default function ClassifyPage() {
         .then((d: ClientCache) => {
           setCache(d);
           setThreshold(d.config.confidence_threshold);
+          const lastClassify = [...(d.runs ?? [])]
+            .reverse()
+            .find((r) => r.type === "classify");
+          if (lastClassify) setLatestRun(lastClassify);
           setRunning(false);
         });
       es.close();
@@ -117,6 +135,34 @@ export default function ClassifyPage() {
 
   return (
     <PageShell eyebrow="Step three" title="Tune the fit.">
+      {latestRun && !bannerDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 -mt-2 px-5 py-3 bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] flex items-start justify-between gap-4"
+        >
+          <div className="text-sm text-[var(--color-text-secondary)]">
+            <span className="text-[var(--color-text-primary)]">
+              {latestRun.tracks_classified > 0
+                ? `Classified ${latestRun.tracks_classified} new tracks for $${latestRun.cost_usd.toFixed(2)}.`
+                : `No new tracks needed Claude this run.`}
+            </span>
+            {latestRun.tracks_total > latestRun.tracks_classified && (
+              <span className="ml-2 text-[var(--color-text-tertiary)]">
+                Reused {latestRun.tracks_total - latestRun.tracks_classified}{" "}
+                cached.
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setBannerDismissed(true)}
+            className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] uppercase tracking-wider"
+          >
+            Dismiss
+          </button>
+        </motion.div>
+      )}
       <div className="sticky top-0 z-10 bg-[var(--color-bg-base)] pt-4 pb-8 -mx-12 px-12 backdrop-blur-md">
         <div className="max-w-md">
           <ConfidenceSlider value={threshold} onChange={setThreshold} />

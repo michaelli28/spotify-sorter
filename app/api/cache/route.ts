@@ -28,12 +28,27 @@ export async function GET() {
   }
 }
 
+const CLEARABLE = new Set(["categories", "assignments", "runs"]);
+
 export async function PATCH(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object")
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   const current = await readCache(cachePath());
-  const patched = patchCache(current, body);
+  const clearKeys = Array.isArray((body as { _clear?: unknown })._clear)
+    ? ((body as { _clear: unknown[] })._clear.filter(
+        (k): k is string => typeof k === "string" && CLEARABLE.has(k),
+      ) as Array<"categories" | "assignments" | "runs">)
+    : [];
+  const cleared = clearKeys.reduce(
+    (acc, key) => ({
+      ...acc,
+      [key]: key === "runs" ? [] : {},
+    }),
+    current,
+  );
+  const { _clear: _omit, ...rest } = body as Record<string, unknown>;
+  const patched = patchCache(cleared, rest);
   await writeCache(cachePath(), patched);
   return NextResponse.json({ ok: true });
 }

@@ -138,4 +138,50 @@ describe("runClassifyFromCache", () => {
     expect(result.tracks_classified).toBe(0);
     expect(callCount).toBe(firstCallCount); // no additional API calls
   });
+
+  it("appends a run record to cache.runs after classifying", async () => {
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () =>
+        HttpResponse.json(
+          makeClassifyResponse([
+            { id: "t1", category: "Chill Vibes", score: 90 },
+            { id: "t2", category: "Chill Vibes", score: 80 },
+          ]),
+        ),
+      ),
+    );
+    await runClassifyFromCache({ apiKey: "sk-ant-x" });
+    const cache = await readCache(join(dir, "cache.json"));
+    expect(cache.runs).toHaveLength(1);
+    expect(cache.runs[0]).toMatchObject({
+      type: "classify",
+      tracks_classified: 2,
+      tracks_total: 2,
+    });
+  });
+
+  it("appends a no-op run record when nothing to classify", async () => {
+    let callCount = 0;
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () => {
+        callCount++;
+        return HttpResponse.json(
+          makeClassifyResponse([
+            { id: "t1", category: "Chill Vibes", score: 90 },
+            { id: "t2", category: "Chill Vibes", score: 80 },
+          ]),
+        );
+      }),
+    );
+    await runClassifyFromCache({ apiKey: "sk-ant-x" });
+    await runClassifyFromCache({ apiKey: "sk-ant-x" });
+    const cache = await readCache(join(dir, "cache.json"));
+    expect(cache.runs).toHaveLength(2);
+    expect(cache.runs[1]).toMatchObject({
+      type: "classify",
+      tracks_classified: 0,
+      cost_usd: 0,
+    });
+    expect(cache.runs[1]!.summary).toContain("already classified");
+  });
 });

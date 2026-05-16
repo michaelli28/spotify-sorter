@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import {
   classifyBatch,
@@ -34,6 +35,9 @@ export async function runClassifyFromCache(opts: {
     }),
   );
 
+  const startedAt = new Date().toISOString();
+  const totalTracks = Object.keys(cache.tracks).length;
+  const alreadyClassified = Object.keys(cache.assignments).length;
   const unclassifiedIds = Object.keys(cache.tracks).filter(
     (id) => !cache.assignments[id],
   );
@@ -48,7 +52,24 @@ export async function runClassifyFromCache(opts: {
     };
   });
 
-  if (inputs.length === 0) return { tracks_classified: 0, cost_usd: 0 };
+  if (inputs.length === 0) {
+    const noopNow = new Date().toISOString();
+    const runs = [
+      ...cache.runs,
+      {
+        run_id: randomBytes(8).toString("hex"),
+        type: "classify" as const,
+        started_at: startedAt,
+        completed_at: noopNow,
+        tracks_classified: 0,
+        tracks_total: totalTracks,
+        cost_usd: 0,
+        summary: `All ${alreadyClassified} tracks already classified — no Claude call needed.`,
+      },
+    ];
+    await writeCache(cachePath, patchCache(cache, { runs }));
+    return { tracks_classified: 0, cost_usd: 0 };
+  }
 
   const batches = chunkInto(inputs, 50);
   const pool = createDegradingPool({
@@ -114,6 +135,28 @@ export async function runClassifyFromCache(opts: {
       }
     }),
   );
+
+  await enqueueWrite(async () => {
+    const runEnd = new Date().toISOString();
+    const finalCache = await readCache(cachePath);
+    const runs = [
+      ...finalCache.runs,
+      {
+        run_id: randomBytes(8).toString("hex"),
+        type: "classify" as const,
+        started_at: startedAt,
+        completed_at: runEnd,
+        tracks_classified: newAssignments,
+        tracks_total: totalTracks,
+        cost_usd: totalCost,
+        summary:
+          alreadyClassified > 0
+            ? `Classified ${newAssignments} new tracks. ${alreadyClassified} reused from cache.`
+            : `Classified ${newAssignments} tracks across ${categories.length} categories.`,
+      },
+    ];
+    await writeCache(cachePath, patchCache(finalCache, { runs }));
+  });
 
   return { tracks_classified: newAssignments, cost_usd: totalCost };
 }

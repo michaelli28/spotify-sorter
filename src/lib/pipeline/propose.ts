@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import {
   runPropose,
@@ -24,6 +25,7 @@ export async function runProposeFromCache(opts: {
       genres: cache.artists[t.artist_id]?.genres ?? [],
     }),
   );
+  const startedAt = new Date().toISOString();
   const result = await runPropose({
     apiKey: opts.apiKey,
     tracks: inputs,
@@ -41,7 +43,20 @@ export async function runProposeFromCache(opts: {
       created_at: now,
     };
   }
-  await writeCache(cachePath, patchCache(cache, { categories }));
+  const runs = [
+    ...cache.runs,
+    {
+      run_id: randomBytes(8).toString("hex"),
+      type: "propose" as const,
+      started_at: startedAt,
+      completed_at: now,
+      tracks_classified: 0,
+      tracks_total: inputs.length,
+      cost_usd: result.cost_usd,
+      summary: `Proposed ${result.categories.length} categories from ${inputs.length} tracks.`,
+    },
+  ];
+  await writeCache(cachePath, patchCache(cache, { categories, runs }));
   console.log(
     `[propose] persisted ${result.categories.length} categories to ${cachePath} (cost $${result.cost_usd.toFixed(4)})`,
   );

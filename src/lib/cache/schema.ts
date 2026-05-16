@@ -62,6 +62,7 @@ export const AssignmentSchema = z.object({
 
 export const RunSchema = z.object({
   run_id: z.string(),
+  type: z.enum(["propose", "classify"]).optional(),
   started_at: ISODate,
   completed_at: ISODate.nullable(),
   tracks_classified: z.number().int().min(0),
