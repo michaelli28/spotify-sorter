@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import clsx from "clsx";
 
 export interface CategoryCardData {
@@ -23,6 +23,7 @@ interface Props {
   onRename: (name: string) => void;
   onDelete: () => void;
   totalCount: number;
+  onAddTrack?: () => void;
 }
 
 export function CategoryCard({
@@ -31,6 +32,7 @@ export function CategoryCard({
   onRename,
   onDelete,
   totalCount,
+  onAddTrack,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? tracks : tracks.slice(0, 5);
@@ -86,15 +88,29 @@ export function CategoryCard({
           </li>
         ))}
       </ol>
-      {tracks.length > 5 && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-6 text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
-        >
-          {expanded ? "Show fewer" : `Show all ${tracks.length} sample tracks`}
-        </button>
-      )}
+      <div className="mt-6 flex items-center gap-5 flex-wrap">
+        {tracks.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
+          >
+            {expanded
+              ? "Show fewer"
+              : `Show all ${tracks.length} sample tracks`}
+          </button>
+        )}
+        {onAddTrack && (
+          <button
+            type="button"
+            onClick={onAddTrack}
+            className="text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add track
+          </button>
+        )}
+      </div>
     </motion.div>
   );
 }

@@ -7,6 +7,7 @@ import { Button } from "@/src/components/design/Button";
 import { MergeableGrid } from "@/src/components/review/MergeableGrid";
 import { AddCategoryForm } from "@/src/components/review/AddCategoryForm";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
+import { TrackSearchModal } from "@/src/components/review/TrackSearchModal";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 import { estimateCostUSD } from "@/src/lib/llm/cost";
 import type { DraftCategory } from "@/src/lib/categories/merge";
@@ -43,6 +44,7 @@ export default function ReviewPage() {
   const [runs, setRuns] = useState<CacheRun[]>([]);
   const [confirming, setConfirming] = useState(false);
   const [reproposing, setReproposing] = useState(false);
+  const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [proposeProgress, setProposeProgress] = useState<{
     output_tokens: number;
@@ -231,6 +233,7 @@ export default function ReviewPage() {
         trackLookup={tracks}
         estimates={estimates}
         onChange={setDraft}
+        onAddTrack={(catId) => setAddingToCategory(catId)}
       />
       <motion.div
         initial={{ opacity: 0 }}
@@ -297,6 +300,36 @@ export default function ReviewPage() {
           classify();
         }}
         onCancel={() => setConfirming(false)}
+      />
+      <TrackSearchModal
+        open={addingToCategory !== null}
+        categoryName={draft.find((c) => c.id === addingToCategory)?.name ?? ""}
+        trackLookup={tracks}
+        alreadyInCategory={
+          new Set(
+            draft.find((c) => c.id === addingToCategory)?.example_track_ids ??
+              [],
+          )
+        }
+        onClose={() => setAddingToCategory(null)}
+        onAdd={(trackIds) => {
+          if (!addingToCategory) return;
+          setDraft(
+            draft.map((c) =>
+              c.id === addingToCategory
+                ? {
+                    ...c,
+                    example_track_ids: [
+                      ...c.example_track_ids,
+                      ...trackIds.filter(
+                        (id) => !c.example_track_ids.includes(id),
+                      ),
+                    ],
+                  }
+                : c,
+            ),
+          );
+        }}
       />
       <CostPreviewModal
         open={reproposing}

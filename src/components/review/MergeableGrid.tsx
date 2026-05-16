@@ -3,9 +3,14 @@ import {
   DndContext,
   useDraggable,
   useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { motion } from "framer-motion";
+import { GripVertical } from "lucide-react";
 import {
   CategoryCard,
   type CategoryCardData,
@@ -21,6 +26,7 @@ interface Props {
   trackLookup: Record<string, TrackLookupEntry>;
   estimates: Record<string, number>;
   onChange: (next: DraftCategory[]) => void;
+  onAddTrack?: (categoryId: string) => void;
 }
 
 function DraggableCard({
@@ -44,11 +50,20 @@ function DraggableCard({
           ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
           : undefined,
         opacity: isDragging ? 0.6 : 1,
-        outline: isOver ? "1px solid var(--color-accent)" : "none",
+        outline: isOver ? "2px solid var(--color-accent)" : "none",
+        outlineOffset: isOver ? "-2px" : undefined,
       }}
-      {...listeners}
-      {...attributes}
+      className="relative group"
     >
+      <button
+        type="button"
+        {...listeners}
+        {...attributes}
+        className="absolute top-3 right-3 z-10 p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        aria-label="Drag to merge into another category"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
       {children}
     </div>
   );
@@ -59,7 +74,15 @@ export function MergeableGrid({
   trackLookup,
   estimates,
   onChange,
+  onAddTrack,
 }: Props) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor),
+  );
+
   function onDragEnd(e: DragEndEvent) {
     const sourceId = String(e.active.id);
     const targetId = e.over ? String(e.over.id) : null;
@@ -68,7 +91,7 @@ export function MergeableGrid({
   }
 
   return (
-    <DndContext onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <motion.div
         className="grid grid-cols-1 lg:grid-cols-2 gap-6"
         initial="hidden"
@@ -106,6 +129,7 @@ export function MergeableGrid({
                   onDelete={() =>
                     onChange(categories.filter((c) => c.id !== cat.id))
                   }
+                  onAddTrack={onAddTrack ? () => onAddTrack(cat.id) : undefined}
                 />
               </DraggableCard>
             </motion.div>
