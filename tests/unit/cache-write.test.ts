@@ -20,7 +20,7 @@ describe("writeCache", () => {
     const path = join(dir, "cache.json");
     await writeCache(path, defaultCache());
     const raw = await readFile(path, "utf-8");
-    expect(JSON.parse(raw).version).toBe(1);
+    expect(JSON.parse(raw).version).toBe(2);
   });
 
   it("writes via temp file then rename (no torn writes)", async () => {
@@ -33,7 +33,7 @@ describe("writeCache", () => {
     const tmpRemaining = files.filter((f) => f.includes(".tmp-"));
     expect(tmpRemaining).toEqual([]);
     const raw = await readFile(path, "utf-8");
-    expect(JSON.parse(raw).version).toBe(1);
+    expect(JSON.parse(raw).version).toBe(2);
     // Confirm fsPromises is the same module used by write.ts (import * as pattern)
     expect(typeof fsPromises.rename).toBe("function");
   });

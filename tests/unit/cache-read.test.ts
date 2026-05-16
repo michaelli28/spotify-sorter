@@ -43,4 +43,41 @@ describe("readCache", () => {
     await writeFile(path, "{not valid json", "utf-8");
     await expect(readCache(path)).rejects.toThrow();
   });
+
+  it("migrates v1 cache forward to v2 by adding playlist_snapshots", async () => {
+    const path = join(dir, "cache.json");
+    const v1Cache = {
+      version: 1,
+      auth: null,
+      config: {
+        prefix: "✨",
+        confidence_threshold: 65,
+        anthropic_model: "claude-haiku-4-5-20251001",
+      },
+      scope: {
+        included_playlist_ids: ["p1"],
+        excluded_playlist_ids: [],
+        include_liked_songs: true,
+      },
+      artists: { a1: { name: "Mac Miller", genres: ["hip hop"] } },
+      tracks: {
+        t1: {
+          artist_id: "a1",
+          title: "Self Care",
+          first_seen: "2026-05-13T00:00:00.000Z",
+        },
+      },
+      categories: {},
+      assignments: {},
+      runs: [],
+    };
+    await writeFile(path, JSON.stringify(v1Cache), "utf-8");
+    const cache = await readCache(path);
+    expect(cache.version).toBe(2);
+    expect(cache.playlist_snapshots).toEqual({});
+    expect(cache.liked_songs_fingerprint).toBeNull();
+    expect(cache.tracks["t1"]?.title).toBe("Self Care");
+    expect(cache.artists["a1"]?.name).toBe("Mac Miller");
+    expect(cache.scope.included_playlist_ids).toEqual(["p1"]);
+  });
 });

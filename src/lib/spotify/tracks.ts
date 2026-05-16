@@ -50,3 +50,30 @@ export async function fetchLikedSongs(
   const items = await paginate<RawItem>(url, { accessToken });
   return normalize(items);
 }
+
+export interface LikedSongsFingerprintInfo {
+  total: number;
+  latest_added_at: string | null;
+}
+
+export async function fetchLikedSongsFingerprint(
+  accessToken: string,
+): Promise<LikedSongsFingerprintInfo | null> {
+  const url =
+    "https://api.spotify.com/v1/me/tracks?limit=1&fields=total,items(added_at)";
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch liked songs fingerprint: ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    total?: number;
+    items?: Array<{ added_at?: string }>;
+  };
+  if (typeof data.total !== "number") return null;
+  return {
+    total: data.total,
+    latest_added_at: data.items?.[0]?.added_at ?? null,
+  };
+}

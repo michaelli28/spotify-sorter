@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const EXPECTED_CACHE_VERSION = 1;
+export const EXPECTED_CACHE_VERSION = 2;
 
 const ISODate = z.string().datetime();
 
@@ -60,6 +60,20 @@ export const AssignmentSchema = z.object({
   override: OverrideSchema,
 });
 
+export const PlaylistSnapshotSchema = z.object({
+  snapshot_id: z.string(),
+  fetched_at: ISODate,
+  track_count: z.number().int().min(0),
+});
+
+export const LikedSongsFingerprintSchema = z
+  .object({
+    total: z.number().int().min(0),
+    latest_added_at: z.string().nullable(),
+    fetched_at: ISODate,
+  })
+  .nullable();
+
 export const RunSchema = z.object({
   run_id: z.string(),
   type: z.enum(["propose", "classify"]).optional(),
@@ -82,6 +96,8 @@ export const CacheSchema = z.object({
   categories: z.record(z.string(), CategorySchema),
   assignments: z.record(z.string(), AssignmentSchema),
   runs: z.array(RunSchema),
+  playlist_snapshots: z.record(z.string(), PlaylistSnapshotSchema),
+  liked_songs_fingerprint: LikedSongsFingerprintSchema,
 });
 
 export type Cache = z.infer<typeof CacheSchema>;

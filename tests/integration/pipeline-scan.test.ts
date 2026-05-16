@@ -105,6 +105,90 @@ describe("runScan", () => {
     expect(cache.artists["a1"]!.genres).toContain("hip hop");
   });
 
+  it("skips full track fetch when playlist snapshot_id matches cache", async () => {
+    let trackFetchCount = 0;
+    server.use(
+      http.get("https://api.spotify.com/v1/playlists/p1", () =>
+        HttpResponse.json({
+          snapshot_id: "snap-stable",
+          tracks: { total: 1 },
+        }),
+      ),
+      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () => {
+        trackFetchCount++;
+        return HttpResponse.json({
+          items: [
+            {
+              track: {
+                id: "t1",
+                name: "Self Care",
+                is_local: false,
+                artists: [{ id: "a1", name: "Mac Miller" }],
+              },
+            },
+          ],
+          next: null,
+        });
+      }),
+      http.get("https://api.spotify.com/v1/me/tracks", () =>
+        HttpResponse.json({ total: 0, items: [], next: null }),
+      ),
+      http.get("https://api.spotify.com/v1/artists", ({ request }) => {
+        const ids = new URL(request.url).searchParams.get("ids")!.split(",");
+        return HttpResponse.json({
+          artists: ids.map((id) => ({ id, name: `n-${id}`, genres: ["pop"] })),
+        });
+      }),
+    );
+    await runScan({ accessToken: "AT" });
+    expect(trackFetchCount).toBe(1);
+    await runScan({ accessToken: "AT" });
+    expect(trackFetchCount).toBe(1);
+  });
+
+  it("re-fetches when playlist snapshot_id changes", async () => {
+    let trackFetchCount = 0;
+    let snapshotId = "snap-A";
+    server.use(
+      http.get("https://api.spotify.com/v1/playlists/p1", () =>
+        HttpResponse.json({
+          snapshot_id: snapshotId,
+          tracks: { total: 1 },
+        }),
+      ),
+      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () => {
+        trackFetchCount++;
+        return HttpResponse.json({
+          items: [
+            {
+              track: {
+                id: `t-${snapshotId}`,
+                name: "Track",
+                is_local: false,
+                artists: [{ id: "a1", name: "Artist" }],
+              },
+            },
+          ],
+          next: null,
+        });
+      }),
+      http.get("https://api.spotify.com/v1/me/tracks", () =>
+        HttpResponse.json({ total: 0, items: [], next: null }),
+      ),
+      http.get("https://api.spotify.com/v1/artists", ({ request }) => {
+        const ids = new URL(request.url).searchParams.get("ids")!.split(",");
+        return HttpResponse.json({
+          artists: ids.map((id) => ({ id, name: `n-${id}`, genres: [] })),
+        });
+      }),
+    );
+    await runScan({ accessToken: "AT" });
+    expect(trackFetchCount).toBe(1);
+    snapshotId = "snap-B";
+    await runScan({ accessToken: "AT" });
+    expect(trackFetchCount).toBe(2);
+  });
+
   it("throws EMPTY_LIBRARY when zero tracks in scope", async () => {
     await writeCache(
       join(dir, "cache.json"),

@@ -29,6 +29,19 @@ export function defaultCache(): Cache {
     categories: {},
     assignments: {},
     runs: [],
+    playlist_snapshots: {},
+    liked_songs_fingerprint: null,
+  };
+}
+
+function migrateV1toV2(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...parsed,
+    version: 2,
+    playlist_snapshots: {},
+    liked_songs_fingerprint: null,
   };
 }
 
@@ -40,12 +53,15 @@ export async function readCache(path: string): Promise<Cache> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return defaultCache();
     throw err;
   }
-  const parsed = JSON.parse(raw);
+  let parsed = JSON.parse(raw) as Record<string, unknown>;
+  if (parsed?.version === 1) {
+    parsed = migrateV1toV2(parsed);
+  }
   if (
     typeof parsed?.version === "number" &&
     parsed.version !== EXPECTED_CACHE_VERSION
   ) {
-    throw new CacheVersionMismatch(parsed.version);
+    throw new CacheVersionMismatch(parsed.version as number);
   }
   return CacheSchema.parse(parsed);
 }

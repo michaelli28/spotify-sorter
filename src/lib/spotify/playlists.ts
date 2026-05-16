@@ -19,6 +19,34 @@ interface RawPlaylist {
   images: Array<{ url: string }> | null;
 }
 
+export interface PlaylistSnapshotInfo {
+  snapshot_id: string;
+  track_count: number;
+}
+
+export async function fetchPlaylistSnapshot(
+  playlistId: string,
+  accessToken: string,
+): Promise<PlaylistSnapshotInfo> {
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}?fields=snapshot_id,tracks(total)`;
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch snapshot for playlist ${playlistId}: ${res.status}`,
+    );
+  }
+  const data = (await res.json()) as {
+    snapshot_id: string;
+    tracks: { total: number } | null;
+  };
+  return {
+    snapshot_id: data.snapshot_id,
+    track_count: data.tracks?.total ?? 0,
+  };
+}
+
 export async function listOwnedPlaylists(
   accessToken: string,
 ): Promise<OwnedPlaylist[]> {

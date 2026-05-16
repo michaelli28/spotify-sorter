@@ -20,6 +20,8 @@ describe("CacheSchema", () => {
     categories: {},
     assignments: {},
     runs: [],
+    playlist_snapshots: {},
+    liked_songs_fingerprint: null,
   };
 
   it("accepts a minimal valid cache", () => {
