@@ -78,7 +78,11 @@ export default function ReviewPage() {
       const existingCategories = Object.entries(
         cache.categories as Record<
           string,
-          { name: string; description: string }
+          {
+            name: string;
+            description: string;
+            example_track_ids?: string[];
+          }
         >,
       );
       if (existingCategories.length > 0) {
@@ -87,7 +91,7 @@ export default function ReviewPage() {
             id,
             name: c.name,
             description: c.description,
-            example_track_ids: [],
+            example_track_ids: c.example_track_ids ?? [],
           })),
         );
         return;
@@ -135,6 +139,7 @@ export default function ReviewPage() {
               description: c.description,
               spotify_playlist_id: null,
               created_at: new Date().toISOString(),
+              example_track_ids: c.example_track_ids,
             },
           ]),
         ),

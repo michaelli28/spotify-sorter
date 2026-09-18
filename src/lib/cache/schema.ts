@@ -39,6 +39,7 @@ export const CategorySchema = z.object({
   description: z.string(),
   spotify_playlist_id: z.string().nullable(),
   created_at: ISODate,
+  example_track_ids: z.array(z.string()).default([]),
 });
 
 export const MatchSchema = z.object({

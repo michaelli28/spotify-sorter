@@ -59,6 +59,7 @@ describe("CacheSchema", () => {
           description: "Dreamy",
           spotify_playlist_id: null,
           created_at: "2026-05-13T00:00:00.000Z",
+          example_track_ids: [],
         },
       },
       assignments: {

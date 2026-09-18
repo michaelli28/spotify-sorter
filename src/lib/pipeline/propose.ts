@@ -41,6 +41,7 @@ export async function runProposeFromCache(opts: {
       description: c.description,
       spotify_playlist_id: null,
       created_at: now,
+      example_track_ids: c.example_track_ids,
     };
   }
   const runs = [

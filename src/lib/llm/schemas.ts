@@ -3,7 +3,9 @@ import { z } from "zod";
 export const ProposedCategorySchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(280),
-  example_track_ids: z.array(z.string()),
+  example_track_ids: z
+    .array(z.string())
+    .transform((ids) => Array.from(new Set(ids))),
 });
 
 export const ProposeResponseSchema = z.object({
