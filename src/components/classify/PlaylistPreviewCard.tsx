@@ -11,7 +11,6 @@ export interface PreviewCardData {
     id: string;
     title: string;
     artist_name: string;
-    reasoning?: string;
   }>;
 }
 
@@ -55,7 +54,6 @@ export function PlaylistPreviewCard({ card, expanded, onToggleExpand }: Props) {
             trackId={t.id}
             title={t.title}
             artist_name={t.artist_name}
-            reasoning={t.reasoning}
             categoryId={card.id}
           />
         ))}

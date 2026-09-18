@@ -101,7 +101,6 @@ export async function runClassifyFromCache(opts: {
             for (const a of r.assignments) {
               merged[a.track_id] = {
                 matches: a.matches,
-                reasoning: a.reasoning,
                 classified_at: now,
                 override: null,
               };

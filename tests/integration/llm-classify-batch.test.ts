@@ -63,7 +63,6 @@ function makeValidResponse(
           tracks: trackAssignments.map((a) => ({
             track_id: a.track_id,
             matches: [{ category: a.category, score: a.score }],
-            reasoning: "Fits the vibe",
           })),
         }),
       },
@@ -99,6 +98,29 @@ describe("classifyBatch", () => {
     const t2 = result.assignments.find((a) => a.track_id === "t2")!;
     expect(t2.matches[0]).toMatchObject({ category_id: "cat-2", score: 85 });
     expect(result.cost_usd).toBeGreaterThan(0);
+  });
+
+  it("does not ask the model for reasoning text (output tokens are 93% of cost)", async () => {
+    let body = "";
+    server.use(
+      http.post(
+        "https://api.anthropic.com/v1/messages",
+        async ({ request }) => {
+          body = await request.text();
+          return HttpResponse.json(
+            makeValidResponse([
+              { track_id: "t1", category: "Chill Vibes", score: 90 },
+            ]),
+          );
+        },
+      ),
+    );
+    await classifyBatch({
+      apiKey: "sk-ant-x",
+      categories,
+      tracks: [tracks[0]!],
+    });
+    expect(body).not.toMatch(/reasoning/i);
   });
 
   it("retries on malformed JSON", async () => {
@@ -162,7 +184,6 @@ describe("classifyBatch", () => {
                       { category: "Unknown Category", score: 80 },
                       { category: "Chill Vibes", score: 70 },
                     ],
-                    reasoning: "Mixed",
                   },
                 ],
               }),

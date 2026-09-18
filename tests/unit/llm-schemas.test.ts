@@ -44,7 +44,6 @@ describe("ClassifyResponseSchema", () => {
             { category: "Y", score: 35 },
             { category: "Z", score: 28 },
           ],
-          reasoning: "Dreamy.",
         },
       ],
     };
@@ -57,7 +56,6 @@ describe("ClassifyResponseSchema", () => {
         {
           track_id: "t1",
           matches: [{ category: "A", score: 150 }],
-          reasoning: "x",
         },
       ],
     };
@@ -73,7 +71,6 @@ describe("ClassifyResponseSchema", () => {
             category: `c${i}`,
             score: 50,
           })),
-          reasoning: "x",
         },
       ],
     };

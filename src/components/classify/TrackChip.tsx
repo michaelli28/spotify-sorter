@@ -7,17 +7,10 @@ interface Props {
   trackId: string;
   title: string;
   artist_name: string;
-  reasoning?: string;
   categoryId: string;
 }
 
-export function TrackChip({
-  trackId,
-  title,
-  artist_name,
-  reasoning,
-  categoryId,
-}: Props) {
+export function TrackChip({ trackId, title, artist_name, categoryId }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: `chip:${trackId}`,
@@ -37,7 +30,6 @@ export function TrackChip({
         "group relative flex items-baseline gap-3 py-1.5 px-2 -mx-2 cursor-grab active:cursor-grabbing",
         isDragging && "opacity-50",
       )}
-      title={reasoning}
     >
       <div className="flex-1 min-w-0">
         <span className="text-[var(--color-text-primary)] truncate">

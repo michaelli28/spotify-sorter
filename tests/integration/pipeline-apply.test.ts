@@ -55,7 +55,6 @@ function seedCache(overrides: Parameters<typeof patchCache>[1]) {
     assignments: {
       t1: {
         matches: [{ category_id: "cat-1", score: 85 }],
-        reasoning: "Dreamy production",
         override: null,
         classified_at: "2026-05-13T00:00:00.000Z",
       },

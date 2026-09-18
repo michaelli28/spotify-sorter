@@ -7,7 +7,6 @@ import type { Assignment } from "@/src/lib/cache";
 
 const a = (matches: Array<[string, number]>): Assignment => ({
   matches: matches.map(([category_id, score]) => ({ category_id, score })),
-  reasoning: "",
   classified_at: "2026-05-13T00:00:00.000Z",
   override: null,
 });

@@ -65,7 +65,6 @@ describe("CacheSchema", () => {
       assignments: {
         t1: {
           matches: [{ category_id: "c1", score: 87 }],
-          reasoning: "Dreamy synth",
           classified_at: "2026-05-13T00:00:00.000Z",
           override: null,
         },

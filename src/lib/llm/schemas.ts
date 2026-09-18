@@ -20,7 +20,6 @@ export const ClassifyMatchSchema = z.object({
 export const ClassifyTrackSchema = z.object({
   track_id: z.string().min(1),
   matches: z.array(ClassifyMatchSchema).min(0).max(5),
-  reasoning: z.string().max(280),
 });
 
 export const ClassifyResponseSchema = z.object({

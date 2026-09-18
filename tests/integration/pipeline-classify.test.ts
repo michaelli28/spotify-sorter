@@ -79,7 +79,6 @@ function makeClassifyResponse(
           tracks: tracks.map((t) => ({
             track_id: t.id,
             matches: [{ category: t.category, score: t.score }],
-            reasoning: "Fits well",
           })),
         }),
       },
@@ -113,6 +112,22 @@ describe("runClassifyFromCache", () => {
       score: 90,
     });
     expect(cache.assignments["t2"]).toBeDefined();
+  });
+
+  it("persists assignments without per-track reasoning text", async () => {
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () =>
+        HttpResponse.json(
+          makeClassifyResponse([
+            { id: "t1", category: "Chill Vibes", score: 90 },
+            { id: "t2", category: "Chill Vibes", score: 80 },
+          ]),
+        ),
+      ),
+    );
+    await runClassifyFromCache({ apiKey: "sk-ant-x" });
+    const cache = await readCache(join(dir, "cache.json"));
+    expect(cache.assignments["t1"]).not.toHaveProperty("reasoning");
   });
 
   it("skips already-classified tracks on second run", async () => {

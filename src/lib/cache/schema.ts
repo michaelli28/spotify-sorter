@@ -56,7 +56,6 @@ export const OverrideSchema = z
 
 export const AssignmentSchema = z.object({
   matches: z.array(MatchSchema).min(1).max(5),
-  reasoning: z.string(),
   classified_at: ISODate,
   override: OverrideSchema,
 });

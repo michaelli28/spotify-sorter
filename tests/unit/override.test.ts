@@ -7,7 +7,6 @@ import type { Assignment } from "@/src/lib/cache";
 
 const a: Assignment = {
   matches: [{ category_id: "c1", score: 90 }],
-  reasoning: "r",
   classified_at: "2026-05-13T00:00:00.000Z",
   override: null,
 };

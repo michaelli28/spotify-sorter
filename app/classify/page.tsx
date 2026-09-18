@@ -80,7 +80,6 @@ export default function ClassifyPage() {
             id: tid,
             title: t.title,
             artist_name: cache.artists[t.artist_id]?.name ?? "",
-            reasoning: cache.assignments[tid]?.reasoning,
           };
         }),
       };

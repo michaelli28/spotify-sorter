@@ -60,7 +60,6 @@ beforeEach(async () => {
       assignments: {
         t1: {
           matches: [{ category_id: "cold", score: 80 }],
-          reasoning: "r",
           classified_at: "2026-05-13T00:00:00.000Z",
           override: null,
         },

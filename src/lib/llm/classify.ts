@@ -19,7 +19,6 @@ export interface ClassifyTrackInput {
 export interface BatchAssignment {
   track_id: string;
   matches: Array<{ category_id: string; score: number }>;
-  reasoning: string;
 }
 export interface BatchResult {
   assignments: BatchAssignment[];
@@ -38,7 +37,7 @@ function buildSystem(categories: ClassifyCategory[]): string {
     .join("\n");
   return `You are classifying tracks into the user's personal categories.
 
-For each track, return the TOP 5 categories that fit best with a 0-100 fit score, sorted highest first. Include a one-sentence "reasoning" explaining why the track lands where it does.
+For each track, return the TOP 5 categories that fit best with a 0-100 fit score, sorted highest first.
 
 Use ONLY these category names exactly as written (case-sensitive):
 
@@ -49,8 +48,7 @@ Respond with valid JSON matching this shape:
   "tracks": [
     {
       "track_id": "string",
-      "matches": [{ "category": "string", "score": 0-100 }],
-      "reasoning": "string"
+      "matches": [{ "category": "string", "score": 0-100 }]
     }
   ]
 }
@@ -158,7 +156,6 @@ export async function classifyBatch(opts: {
       .filter((m): m is { category_id: string; score: number } =>
         Boolean(m.category_id),
       ),
-    reasoning: t.reasoning,
   }));
 
   const cost = costFromUsage(attempt.usage);
