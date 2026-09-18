@@ -50,9 +50,13 @@ describe("GET /api/llm/classify", () => {
       return run.promise;
     });
 
-    const first = await classifyGET();
+    const first = await classifyGET(
+      new Request("http://127.0.0.1:3000/api/llm/classify"),
+    );
     await tick();
-    const second = await classifyGET();
+    const second = await classifyGET(
+      new Request("http://127.0.0.1:3000/api/llm/classify"),
+    );
     await tick();
     run.resolve({ tracks_classified: 100, cost_usd: 0.1 });
 
@@ -70,8 +74,12 @@ describe("GET /api/llm/classify", () => {
 
   it("starts a fresh job once the previous one has finished", async () => {
     classifyMock.mockResolvedValue({ tracks_classified: 0, cost_usd: 0 });
-    await readAll(await classifyGET());
-    await readAll(await classifyGET());
+    await readAll(
+      await classifyGET(new Request("http://127.0.0.1:3000/api/llm/classify")),
+    );
+    await readAll(
+      await classifyGET(new Request("http://127.0.0.1:3000/api/llm/classify")),
+    );
     expect(classifyMock).toHaveBeenCalledTimes(2);
   });
 
@@ -79,9 +87,13 @@ describe("GET /api/llm/classify", () => {
     const run = deferred<{ tracks_classified: number; cost_usd: number }>();
     classifyMock.mockReturnValueOnce(run.promise);
 
-    const first = await classifyGET();
+    const first = await classifyGET(
+      new Request("http://127.0.0.1:3000/api/llm/classify"),
+    );
     await tick();
-    const second = await classifyGET();
+    const second = await classifyGET(
+      new Request("http://127.0.0.1:3000/api/llm/classify"),
+    );
     await tick();
     run.reject(new Error("boom"));
 
@@ -90,7 +102,13 @@ describe("GET /api/llm/classify", () => {
     expect(b).toContain('event: error\ndata: {"message":"boom"}');
 
     classifyMock.mockResolvedValueOnce({ tracks_classified: 1, cost_usd: 0 });
-    expect(await readAll(await classifyGET())).toContain("event: done");
+    expect(
+      await readAll(
+        await classifyGET(
+          new Request("http://127.0.0.1:3000/api/llm/classify"),
+        ),
+      ),
+    ).toContain("event: done");
     expect(classifyMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -100,9 +118,13 @@ describe("GET /api/llm/propose", () => {
     const run = deferred<Awaited<ReturnType<typeof runProposeFromCache>>>();
     proposeMock.mockReturnValue(run.promise);
 
-    const first = await proposeGET();
+    const first = await proposeGET(
+      new Request("http://127.0.0.1:3000/api/llm/propose"),
+    );
     await tick();
-    const second = await proposeGET();
+    const second = await proposeGET(
+      new Request("http://127.0.0.1:3000/api/llm/propose"),
+    );
     await tick();
     run.resolve({ categories: [], cost_usd: 0.02 });
 
