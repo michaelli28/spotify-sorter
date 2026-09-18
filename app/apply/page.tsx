@@ -7,6 +7,7 @@ import { ProgressBar } from "@/src/components/scan/ProgressBar";
 import { ApplyConfirmationModal } from "@/src/components/apply/ApplyConfirmationModal";
 import { SuccessCredits } from "@/src/components/apply/SuccessCredits";
 import { categoryMembers } from "@/src/lib/classification/threshold";
+import { readEventStream } from "@/src/lib/client/read-event-stream";
 
 interface DoneResult {
   created: number;
@@ -53,27 +54,36 @@ export default function ApplyPage() {
     })();
   }, []);
 
-  function start() {
+  // The apply route is POST-only (it writes to Spotify), so this can't use
+  // EventSource, which always sends GET and got a 405.
+  async function start() {
     setConfirmOpen(false);
     setRunning(true);
     setError(null);
-    const es = new EventSource("/api/spotify/apply");
-    es.addEventListener("progress", (e) =>
-      setProgress(JSON.parse((e as MessageEvent).data)),
-    );
-    es.addEventListener("done", (e) => {
-      setDone(JSON.parse((e as MessageEvent).data));
-      es.close();
-    });
-    es.addEventListener("error", (e) => {
-      const raw = (e as MessageEvent).data;
-      const message = raw
-        ? (JSON.parse(raw).message ?? "Unknown error")
-        : "Connection lost — Spotify may have rate-limited the app.";
-      setError(message);
+    try {
+      let finished = false;
+      const res = await fetch("/api/spotify/apply", { method: "POST" });
+      await readEventStream(res, (event, data) => {
+        if (event === "progress") {
+          setProgress(data as typeof progress);
+        } else if (event === "done") {
+          finished = true;
+          setDone(data as DoneResult);
+        } else if (event === "error") {
+          finished = true;
+          setError((data as { message?: string }).message ?? "Unknown error");
+          setRunning(false);
+        }
+      });
+      if (!finished) {
+        throw new Error(
+          "Connection lost — Spotify may have rate-limited the app.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
       setRunning(false);
-      es.close();
-    });
+    }
   }
 
   if (done) {
