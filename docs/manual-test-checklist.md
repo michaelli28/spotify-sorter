@@ -57,5 +57,5 @@ Run against a disposable Spotify account before any release-equivalent moment.
 ## Errors
 
 - [ ] Spotify 429 → automatic backoff, no user action needed
-- [ ] Anthropic 429 → concurrency degrades 3→2→1
+- [ ] Anthropic 429 → SDK retries twice, then the run stops with a failed run record
 - [ ] Mid-classify cancel + resume next session works
