@@ -107,6 +107,51 @@ describe("runApplyFromCache", () => {
     expect(cache.categories["cat-1"]!.spotify_playlist_id).toBe("p_new");
   });
 
+  it("never sends Spotify an assignment key that isn't a real track", async () => {
+    await writeCache(
+      join(dir, "cache.json"),
+      seedCache({
+        assignments: {
+          t1: {
+            matches: [{ category_id: "cat-1", score: 85 }],
+            override: null,
+            classified_at: "2026-05-13T00:00:00.000Z",
+          },
+          // An orphan the old classifier wrote: a "title — artist" string.
+          "6Matilda — Harry Styles": {
+            matches: [{ category_id: "cat-1", score: 90 }],
+            override: null,
+            classified_at: "2026-05-13T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    let sent: string[] = [];
+    server.use(
+      http.get("https://api.spotify.com/v1/me", () =>
+        HttpResponse.json({ id: "me" }),
+      ),
+      http.get("https://api.spotify.com/v1/me/playlists", () =>
+        HttpResponse.json({ items: [], next: null }),
+      ),
+      http.post("https://api.spotify.com/v1/me/playlists", () =>
+        HttpResponse.json({ id: "p_new" }),
+      ),
+      http.post(
+        "https://api.spotify.com/v1/playlists/p_new/items",
+        async ({ request }) => {
+          sent = ((await request.json()) as { uris: string[] }).uris;
+          return HttpResponse.json({ snapshot_id: "snap1" });
+        },
+      ),
+    );
+
+    const result = await runApplyFromCache({ accessToken: TOKEN });
+
+    expect(sent).toEqual(["spotify:track:t1"]);
+    expect(result.tracks_added).toBe(1);
+  });
+
   it("reuses existing playlist by stored id, skips existing tracks (idempotent)", async () => {
     await writeCache(
       join(dir, "cache.json"),

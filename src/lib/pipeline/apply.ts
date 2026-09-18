@@ -79,7 +79,11 @@ export async function runApplyFromCache(opts: {
       await writeCache(cachePath, cache);
     }
 
-    const trackIds = Array.from(members.get(categoryId) ?? []);
+    // Only real tracks: the old classifier wrote invented keys (e.g.
+    // "6Matilda — Harry Styles") that would make Spotify reject the chunk.
+    const trackIds = Array.from(members.get(categoryId) ?? []).filter(
+      (id) => id in cache.tracks,
+    );
     const existingIds = wasCreated
       ? new Set<string>()
       : new Set(
