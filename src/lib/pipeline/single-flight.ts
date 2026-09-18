@@ -7,12 +7,13 @@ export interface Job<P, R> {
 
 // At most one run at a time: a request that arrives while a run is in flight
 // joins it (and gets its latest progress) instead of starting a second,
-// double-billed run. The slot frees when the run settles.
-export function singleFlight<P, R>(
-  run: (emit: Listener<P>) => Promise<R>,
-): () => Job<P, R> {
+// double-billed run. A joiner's args are ignored. The slot frees when the run
+// settles.
+export function singleFlight<P, R, A extends unknown[] = []>(
+  run: (emit: Listener<P>, ...args: A) => Promise<R>,
+): (...args: A) => Job<P, R> {
   let current: Job<P, R> | null = null;
-  return () => {
+  return (...args) => {
     if (current) return current;
     const listeners = new Set<Listener<P>>();
     let latest: { progress: P } | null = null;
@@ -28,7 +29,7 @@ export function singleFlight<P, R>(
     };
     const job: Job<P, R> = {
       result: Promise.resolve()
-        .then(() => run(emit))
+        .then(() => run(emit, ...args))
         .finally(() => {
           if (current === job) current = null;
         }),
