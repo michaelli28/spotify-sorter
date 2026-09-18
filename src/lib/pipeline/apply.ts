@@ -90,9 +90,7 @@ export async function runApplyFromCache(opts: {
     const toAdd = trackIds.filter((id) => !existingIds.has(id));
     if (toAdd.length > 0) {
       const uris = toAdd.map((id) => `spotify:track:${id}`);
-      await withRetry429(() =>
-        addTracksToPlaylist(opts.accessToken, playlistId!, uris),
-      );
+      await addTracksToPlaylist(opts.accessToken, playlistId!, uris);
       tracks_added += toAdd.length;
       if (!wasCreated) updated++;
     }

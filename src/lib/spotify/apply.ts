@@ -1,5 +1,6 @@
 import { paginate } from "./pagination";
 import { spotifyApi } from "./urls";
+import { withRetry429 } from "./retry";
 import { rowTrack, type PlaylistRow } from "./tracks";
 
 export async function createPlaylist(
@@ -27,22 +28,26 @@ export async function addTracksToPlaylist(
   playlistId: string,
   uris: string[],
 ): Promise<void> {
+  // Retry per chunk: Spotify appends duplicates, so retrying the whole loop
+  // after a 429 on chunk k would re-add chunks 0..k-1.
   for (let i = 0; i < uris.length; i += 100) {
     const chunk = uris.slice(i, i + 100);
-    const r = await fetch(spotifyApi(`/playlists/${playlistId}/items`), {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ uris: chunk }),
+    await withRetry429(async () => {
+      const r = await fetch(spotifyApi(`/playlists/${playlistId}/items`), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ uris: chunk }),
+      });
+      if (!r.ok) {
+        const err = new Error(`addTracks ${r.status}`);
+        (err as { status?: number }).status = r.status;
+        (err as { headers?: Headers }).headers = r.headers;
+        throw err;
+      }
     });
-    if (!r.ok) {
-      const err = new Error(`addTracks ${r.status}`);
-      (err as { status?: number }).status = r.status;
-      (err as { headers?: Headers }).headers = r.headers;
-      throw err;
-    }
   }
 }
 

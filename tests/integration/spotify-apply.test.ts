@@ -56,6 +56,37 @@ describe("addTracksToPlaylist", () => {
     expect(calls[0]).toHaveLength(100);
     expect(calls[1]).toHaveLength(50);
   });
+
+  it("retries only the rate-limited chunk, so earlier chunks aren't appended twice", async () => {
+    const calls: string[] = [];
+    let rateLimited = false;
+    server.use(
+      http.post(
+        "https://api.spotify.com/v1/playlists/pl1/items",
+        async ({ request }) => {
+          const { uris } = (await request.json()) as { uris: string[] };
+          calls.push(uris[0]!);
+          if (uris[0] === "spotify:track:t100" && !rateLimited) {
+            rateLimited = true;
+            return new HttpResponse(null, {
+              status: 429,
+              headers: { "retry-after": "0" },
+            });
+          }
+          return HttpResponse.json({ snapshot_id: "snap" });
+        },
+      ),
+    );
+
+    const uris = Array.from({ length: 150 }, (_, i) => `spotify:track:t${i}`);
+    await addTracksToPlaylist(TOKEN, "pl1", uris);
+
+    expect(calls).toEqual([
+      "spotify:track:t0",
+      "spotify:track:t100",
+      "spotify:track:t100",
+    ]);
+  });
 });
 
 describe("listPlaylistTrackIds", () => {
