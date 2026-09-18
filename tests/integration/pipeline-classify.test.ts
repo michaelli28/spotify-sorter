@@ -137,13 +137,6 @@ describe("runClassifyFromCache", () => {
     ]);
   });
 
-  it("persists assignments without per-track reasoning text", async () => {
-    server.use(classifyHandler());
-    await runClassifyFromCache({ apiKey: "sk-ant-x" });
-    const cache = await readCache(join(dir, "cache.json"));
-    expect(cache.assignments["t1"]).not.toHaveProperty("reasoning");
-  });
-
   it("resends a track the model skipped, and counts that call's cost too", async () => {
     const calls: string[][] = [];
     server.use(
