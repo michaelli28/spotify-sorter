@@ -16,7 +16,9 @@ interface RawPlaylist {
   id: string;
   name: string;
   owner: { id: string } | null;
-  tracks: { total: number } | null;
+  // `tracks` was renamed `items` in Feb 2026; older apps still get `tracks`.
+  items?: { total: number } | null;
+  tracks?: { total: number } | null;
   images: Array<{ url: string }> | null;
 }
 
@@ -30,7 +32,7 @@ export async function fetchPlaylistSnapshot(
   accessToken: string,
 ): Promise<PlaylistSnapshotInfo> {
   const url = spotifyApi(
-    `/playlists/${playlistId}?fields=snapshot_id,tracks(total)`,
+    `/playlists/${playlistId}?fields=snapshot_id,items(total),tracks(total)`,
   );
   const res = await fetch(url, {
     headers: { authorization: `Bearer ${accessToken}` },
@@ -40,13 +42,12 @@ export async function fetchPlaylistSnapshot(
       `Failed to fetch snapshot for playlist ${playlistId}: ${res.status}`,
     );
   }
-  const data = (await res.json()) as {
+  const data = (await res.json()) as Pick<RawPlaylist, "items" | "tracks"> & {
     snapshot_id: string;
-    tracks: { total: number } | null;
   };
   return {
     snapshot_id: data.snapshot_id,
-    track_count: data.tracks?.total ?? 0,
+    track_count: data.items?.total ?? data.tracks?.total ?? 0,
   };
 }
 
@@ -68,7 +69,7 @@ export async function listOwnedPlaylists(
     .map((p) => ({
       id: p.id,
       name: p.name,
-      track_count: p.tracks?.total ?? 0,
+      track_count: p.items?.total ?? p.tracks?.total ?? 0,
       cover_url: p.images?.[0]?.url ?? null,
     }));
 }

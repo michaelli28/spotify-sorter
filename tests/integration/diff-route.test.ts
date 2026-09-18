@@ -58,7 +58,7 @@ afterEach(async () => {
 describe("GET /api/spotify/diff", () => {
   it("returns added/removed against cached tracks", async () => {
     server.use(
-      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () =>
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () =>
         HttpResponse.json({
           items: [
             {

@@ -84,10 +84,10 @@ describe("runApplyFromCache", () => {
       http.get("https://api.spotify.com/v1/me/playlists", () =>
         HttpResponse.json({ items: [], next: null }),
       ),
-      http.post("https://api.spotify.com/v1/users/me/playlists", () =>
+      http.post("https://api.spotify.com/v1/me/playlists", () =>
         HttpResponse.json({ id: "p_new" }),
       ),
-      http.post("https://api.spotify.com/v1/playlists/p_new/tracks", () =>
+      http.post("https://api.spotify.com/v1/playlists/p_new/items", () =>
         HttpResponse.json({ snapshot_id: "snap1" }),
       ),
     );
@@ -125,19 +125,16 @@ describe("runApplyFromCache", () => {
 
     let addTracksCalled = false;
     server.use(
-      http.get("https://api.spotify.com/v1/playlists/p_existing/tracks", () =>
+      http.get("https://api.spotify.com/v1/playlists/p_existing/items", () =>
         HttpResponse.json({
           items: [{ track: { id: "t1" } }],
           next: null,
         }),
       ),
-      http.post(
-        "https://api.spotify.com/v1/playlists/p_existing/tracks",
-        () => {
-          addTracksCalled = true;
-          return HttpResponse.json({ snapshot_id: "snap2" });
-        },
-      ),
+      http.post("https://api.spotify.com/v1/playlists/p_existing/items", () => {
+        addTracksCalled = true;
+        return HttpResponse.json({ snapshot_id: "snap2" });
+      }),
     );
 
     const result = await runApplyFromCache({ accessToken: TOKEN });
@@ -171,14 +168,14 @@ describe("runApplyFromCache", () => {
           next: null,
         }),
       ),
-      http.post("https://api.spotify.com/v1/users/me/playlists", () => {
+      http.post("https://api.spotify.com/v1/me/playlists", () => {
         createCalled = true;
         return HttpResponse.json({ id: "p_should_not_create" });
       }),
-      http.get("https://api.spotify.com/v1/playlists/p_found/tracks", () =>
+      http.get("https://api.spotify.com/v1/playlists/p_found/items", () =>
         HttpResponse.json({ items: [], next: null }),
       ),
-      http.post("https://api.spotify.com/v1/playlists/p_found/tracks", () =>
+      http.post("https://api.spotify.com/v1/playlists/p_found/items", () =>
         HttpResponse.json({ snapshot_id: "snap3" }),
       ),
     );

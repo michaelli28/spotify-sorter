@@ -49,7 +49,7 @@ afterEach(async () => {
 describe("runScan", () => {
   it("fetches tracks + artists, dedupes, persists to cache", async () => {
     server.use(
-      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () =>
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () =>
         HttpResponse.json({
           items: [
             {
@@ -114,7 +114,7 @@ describe("runScan", () => {
           tracks: { total: 1 },
         }),
       ),
-      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () => {
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () => {
         trackFetchCount++;
         return HttpResponse.json({
           items: [
@@ -156,7 +156,7 @@ describe("runScan", () => {
           tracks: { total: 1 },
         }),
       ),
-      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () => {
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () => {
         trackFetchCount++;
         return HttpResponse.json({
           items: [

@@ -17,18 +17,21 @@ afterAll(() => server.close());
 const TOKEN = "test-token";
 
 describe("createPlaylist", () => {
-  it("POSTs private playlist and returns id", async () => {
+  it("POSTs a private playlist to /me/playlists and returns its id", async () => {
+    let body: unknown;
     server.use(
-      http.get("https://api.spotify.com/v1/me", () =>
-        HttpResponse.json({ id: "user123" }),
-      ),
-      http.post("https://api.spotify.com/v1/users/user123/playlists", () =>
-        HttpResponse.json({ id: "new-playlist-id" }),
+      http.post(
+        "https://api.spotify.com/v1/me/playlists",
+        async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ id: "new-playlist-id" }, { status: 201 });
+        },
       ),
     );
 
     const id = await createPlaylist(TOKEN, "My New Playlist");
     expect(id).toBe("new-playlist-id");
+    expect(body).toMatchObject({ name: "My New Playlist", public: false });
   });
 });
 
@@ -37,7 +40,7 @@ describe("addTracksToPlaylist", () => {
     const calls: string[][] = [];
     server.use(
       http.post(
-        "https://api.spotify.com/v1/playlists/pl1/tracks",
+        "https://api.spotify.com/v1/playlists/pl1/items",
         async ({ request }) => {
           const body = (await request.json()) as { uris: string[] };
           calls.push(body.uris);
@@ -56,22 +59,29 @@ describe("addTracksToPlaylist", () => {
 });
 
 describe("listPlaylistTrackIds", () => {
-  it("returns existing track ids", async () => {
+  it("reads /items rows keyed `item` (new) or `track` (older apps), 50 per page", async () => {
+    let limit: string | null = null;
     server.use(
-      http.get("https://api.spotify.com/v1/playlists/pl1/tracks", () =>
-        HttpResponse.json({
-          items: [
-            { track: { id: "t1" } },
-            { track: { id: "t2" } },
-            { track: null },
-          ],
-          next: null,
-        }),
+      http.get(
+        "https://api.spotify.com/v1/playlists/pl1/items",
+        ({ request }) => {
+          limit = new URL(request.url).searchParams.get("limit");
+          return HttpResponse.json({
+            items: [
+              { item: { id: "t1" }, track: true },
+              { track: { id: "t2" } },
+              { item: null },
+              { track: null },
+            ],
+            next: null,
+          });
+        },
       ),
     );
 
     const ids = await listPlaylistTrackIds(TOKEN, "pl1");
     expect(ids).toEqual(["t1", "t2"]);
+    expect(limit).toBe("50");
   });
 });
 

@@ -1,16 +1,12 @@
 import { paginate } from "./pagination";
 import { spotifyApi } from "./urls";
+import { rowTrack, type PlaylistRow } from "./tracks";
 
 export async function createPlaylist(
   accessToken: string,
   name: string,
 ): Promise<string> {
-  const me = await fetch(spotifyApi("/me"), {
-    headers: { authorization: `Bearer ${accessToken}` },
-  });
-  if (!me.ok) throw new Error(`me ${me.status}`);
-  const { id: userId } = (await me.json()) as { id: string };
-  const r = await fetch(spotifyApi(`/users/${userId}/playlists`), {
+  const r = await fetch(spotifyApi("/me/playlists"), {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
@@ -33,7 +29,7 @@ export async function addTracksToPlaylist(
 ): Promise<void> {
   for (let i = 0; i < uris.length; i += 100) {
     const chunk = uris.slice(i, i + 100);
-    const r = await fetch(spotifyApi(`/playlists/${playlistId}/tracks`), {
+    const r = await fetch(spotifyApi(`/playlists/${playlistId}/items`), {
       method: "POST",
       headers: {
         authorization: `Bearer ${accessToken}`,
@@ -54,13 +50,13 @@ export async function listPlaylistTrackIds(
   accessToken: string,
   playlistId: string,
 ): Promise<string[]> {
-  const items = await paginate<{ track: { id: string | null } | null }>(
-    spotifyApi(
-      `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id)),next`,
-    ),
+  const rows = await paginate<PlaylistRow>(
+    spotifyApi(`/playlists/${playlistId}/items?limit=50`),
     { accessToken },
   );
-  return items.map((i) => i.track?.id).filter((x): x is string => Boolean(x));
+  return rows
+    .map((row) => rowTrack<{ id: string | null }>(row)?.id)
+    .filter((x): x is string => Boolean(x));
 }
 
 export async function findOwnedPlaylistByName(

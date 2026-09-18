@@ -8,20 +8,32 @@ export interface NormalizedTrack {
   artist_name: string;
 }
 
-interface RawItem {
-  track: null | {
-    id: string | null;
-    name: string;
-    is_local: boolean;
-    artists: Array<{ id: string; name: string }>;
-    linked_from?: { id: string };
-  };
+interface RawTrack {
+  id: string | null;
+  name: string;
+  is_local: boolean;
+  artists: Array<{ id: string; name: string }>;
+  linked_from?: { id: string };
 }
 
-function normalize(items: RawItem[]): NormalizedTrack[] {
+export interface PlaylistRow {
+  item?: unknown;
+  track?: unknown;
+}
+
+// Since Feb 2026, playlist rows key the track as `item` (a leftover `track` may
+// be a boolean); older apps' playlist rows and saved-track rows use `track`.
+export function rowTrack<T>(row: PlaylistRow): T | null {
+  for (const value of [row.item, row.track]) {
+    if (value && typeof value === "object") return value as T;
+  }
+  return null;
+}
+
+function normalize(rows: PlaylistRow[]): NormalizedTrack[] {
   const out: NormalizedTrack[] = [];
-  for (const item of items) {
-    const t = item.track;
+  for (const row of rows) {
+    const t = rowTrack<RawTrack>(row);
     if (!t || !t.id || t.is_local) continue;
     const primary = t.artists[0];
     if (!primary) continue;
@@ -39,11 +51,10 @@ export async function fetchPlaylistTracks(
   playlistId: string,
   accessToken: string,
 ): Promise<NormalizedTrack[]> {
-  const url = spotifyApi(
-    `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`,
-  );
-  const items = await paginate<RawItem>(url, { accessToken });
-  return normalize(items);
+  // No `fields` filter: its documented examples still use the pre-rename keys.
+  const url = spotifyApi(`/playlists/${playlistId}/items?limit=50`);
+  const rows = await paginate<PlaylistRow>(url, { accessToken });
+  return normalize(rows);
 }
 
 export async function fetchLikedSongs(
@@ -52,8 +63,8 @@ export async function fetchLikedSongs(
   const url = spotifyApi(
     `/me/tracks?limit=50&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`,
   );
-  const items = await paginate<RawItem>(url, { accessToken });
-  return normalize(items);
+  const rows = await paginate<PlaylistRow>(url, { accessToken });
+  return normalize(rows);
 }
 
 export interface LikedSongsFingerprintInfo {

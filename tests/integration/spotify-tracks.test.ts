@@ -12,7 +12,7 @@ afterAll(() => server.close());
 describe("fetchPlaylistTracks", () => {
   it("returns track + linked_from + skips local", async () => {
     server.use(
-      http.get("https://api.spotify.com/v1/playlists/p1/tracks", () =>
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () =>
         HttpResponse.json({
           items: [
             {
@@ -56,6 +56,31 @@ describe("fetchPlaylistTracks", () => {
       artist_id: "a1",
     });
     expect(tracks[1]!.id).toBe("t3orig");
+  });
+
+  it("reads rows keyed `item` (Feb 2026 rename), ignoring a leftover boolean `track`", async () => {
+    server.use(
+      http.get("https://api.spotify.com/v1/playlists/p1/items", () =>
+        HttpResponse.json({
+          items: [
+            {
+              item: {
+                id: "t9",
+                name: "New Shape",
+                is_local: false,
+                artists: [{ id: "a9", name: "Z" }],
+              },
+              track: true,
+            },
+          ],
+          next: null,
+        }),
+      ),
+    );
+    const tracks = await fetchPlaylistTracks("p1", "AT");
+    expect(tracks).toEqual([
+      { id: "t9", title: "New Shape", artist_id: "a9", artist_name: "Z" },
+    ]);
   });
 });
 
