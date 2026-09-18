@@ -1,7 +1,5 @@
 import { SCOPE_STRING } from "./scopes";
-
-const AUTHORIZE_URL = "https://accounts.spotify.com/authorize";
-const TOKEN_URL = "https://accounts.spotify.com/api/token";
+import { spotifyAccounts } from "./urls";
 
 export interface AuthorizeParams {
   clientId: string;
@@ -11,7 +9,7 @@ export interface AuthorizeParams {
 }
 
 export function buildAuthorizeUrl(params: AuthorizeParams): string {
-  const u = new URL(AUTHORIZE_URL);
+  const u = new URL(spotifyAccounts("/authorize"));
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", params.clientId);
   u.searchParams.set("redirect_uri", params.redirectUri);
@@ -47,7 +45,7 @@ export async function exchangeCodeForToken(
     client_id: p.clientId,
     code_verifier: p.verifier,
   });
-  const r = await fetch(TOKEN_URL, {
+  const r = await fetch(spotifyAccounts("/api/token"), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,

@@ -1,4 +1,5 @@
 import type { Artist } from "@/src/lib/cache";
+import { spotifyApi } from "./urls";
 
 export async function fetchArtists(
   ids: string[],
@@ -7,7 +8,7 @@ export async function fetchArtists(
   const out: Record<string, Artist> = {};
   for (let i = 0; i < ids.length; i += 50) {
     const chunk = ids.slice(i, i + 50);
-    const url = `https://api.spotify.com/v1/artists?ids=${chunk.join(",")}`;
+    const url = spotifyApi(`/artists?ids=${chunk.join(",")}`);
     const r = await fetch(url, {
       headers: { authorization: `Bearer ${accessToken}` },
     });

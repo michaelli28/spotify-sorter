@@ -1,4 +1,5 @@
 import { paginate } from "./pagination";
+import { spotifyApi } from "./urls";
 
 export interface NormalizedTrack {
   id: string;
@@ -38,7 +39,9 @@ export async function fetchPlaylistTracks(
   playlistId: string,
   accessToken: string,
 ): Promise<NormalizedTrack[]> {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`;
+  const url = spotifyApi(
+    `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`,
+  );
   const items = await paginate<RawItem>(url, { accessToken });
   return normalize(items);
 }
@@ -46,7 +49,9 @@ export async function fetchPlaylistTracks(
 export async function fetchLikedSongs(
   accessToken: string,
 ): Promise<NormalizedTrack[]> {
-  const url = `https://api.spotify.com/v1/me/tracks?limit=50&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`;
+  const url = spotifyApi(
+    `/me/tracks?limit=50&fields=items(track(id,name,is_local,artists(id,name),linked_from(id))),next`,
+  );
   const items = await paginate<RawItem>(url, { accessToken });
   return normalize(items);
 }
@@ -59,8 +64,7 @@ export interface LikedSongsFingerprintInfo {
 export async function fetchLikedSongsFingerprint(
   accessToken: string,
 ): Promise<LikedSongsFingerprintInfo | null> {
-  const url =
-    "https://api.spotify.com/v1/me/tracks?limit=1&fields=total,items(added_at)";
+  const url = spotifyApi("/me/tracks?limit=1&fields=total,items(added_at)");
   const res = await fetch(url, {
     headers: { authorization: `Bearer ${accessToken}` },
   });

@@ -1,4 +1,5 @@
 import { paginate } from "./pagination";
+import { spotifyApi } from "./urls";
 
 export interface OwnedPlaylist {
   id: string;
@@ -28,7 +29,9 @@ export async function fetchPlaylistSnapshot(
   playlistId: string,
   accessToken: string,
 ): Promise<PlaylistSnapshotInfo> {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}?fields=snapshot_id,tracks(total)`;
+  const url = spotifyApi(
+    `/playlists/${playlistId}?fields=snapshot_id,tracks(total)`,
+  );
   const res = await fetch(url, {
     headers: { authorization: `Bearer ${accessToken}` },
   });
@@ -50,14 +53,14 @@ export async function fetchPlaylistSnapshot(
 export async function listOwnedPlaylists(
   accessToken: string,
 ): Promise<OwnedPlaylist[]> {
-  const meRes = await fetch("https://api.spotify.com/v1/me", {
+  const meRes = await fetch(spotifyApi("/me"), {
     headers: { authorization: `Bearer ${accessToken}` },
   });
   if (!meRes.ok) throw new Error(`Failed to fetch /me: ${meRes.status}`);
   const me = (await meRes.json()) as Me;
 
   const all = await paginate<RawPlaylist>(
-    "https://api.spotify.com/v1/me/playlists?limit=50",
+    spotifyApi("/me/playlists?limit=50"),
     { accessToken },
   );
   return all

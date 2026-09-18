@@ -1,4 +1,5 @@
 import type { TokenResult } from "./auth";
+import { spotifyAccounts } from "./urls";
 
 export class RefreshRevokedError extends Error {
   constructor() {
@@ -16,7 +17,7 @@ export async function refreshAccessToken(p: {
     refresh_token: p.refreshToken,
     client_id: p.clientId,
   });
-  const r = await fetch("https://accounts.spotify.com/api/token", {
+  const r = await fetch(spotifyAccounts("/api/token"), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
