@@ -10,7 +10,7 @@ import {
 } from "vitest";
 import { setupServer } from "msw/node";
 import { http } from "msw";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runPropose } from "@/src/lib/llm/propose";
@@ -96,6 +96,32 @@ describe("runPropose", () => {
     });
     expect(call).toBe(2);
     expect(result.categories).toHaveLength(1);
+  });
+
+  it("charges and logs both calls when the first reply wasn't JSON", async () => {
+    let call = 0;
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () => {
+        call++;
+        return anthropicSseResponse({
+          text: call === 1 ? "not json at all" : validJson,
+          input_tokens: 1500,
+          output_tokens: call === 1 ? 50 : 300,
+        });
+      }),
+    );
+    const result = await runPropose({
+      apiKey: "sk-ant-x",
+      tracks: [{ id: "t1", title: "X", artist_name: "Y", genres: [] }],
+    });
+    // (1500 in @ $1/M + 50 out @ $5/M) + (1500 in + 300 out @ $5/M)
+    expect(result.cost_usd).toBeCloseTo(0.00175 + 0.003, 6);
+    const [file] = await readdir(join(dir, "logs"));
+    const lines = (await readFile(join(dir, "logs", file!), "utf-8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { output_tokens: number });
+    expect(lines.map((l) => l.output_tokens)).toEqual([50, 300]);
   });
 
   it("completes the LLM call even when onProgress throws (client disconnect)", async () => {

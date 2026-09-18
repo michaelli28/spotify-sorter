@@ -122,33 +122,44 @@ export async function runPropose(opts: {
   tracks: ProposeTrackInput[];
   onProgress?: (state: ProposeProgress) => void;
 }): Promise<ProposeResult> {
-  const start = Date.now();
-  let attempt = await callOnce(opts.apiKey, opts.tracks, null, opts.onProgress);
-  let retries = 0;
-  let parsed;
-  try {
-    parsed = parseOrThrow(attempt.text);
-  } catch {
-    retries = 1;
-    attempt = await callOnce(
+  let cost = 0;
+  // Every call is logged and charged, including a first reply that failed to parse.
+  const callAndLog = async (reminder: string | null, retries: number) => {
+    const start = Date.now();
+    const attempt = await callOnce(
       opts.apiKey,
       opts.tracks,
-      "Your previous response was not valid JSON. Respond with valid JSON ONLY, no markdown fences or prose.",
+      reminder,
       opts.onProgress,
     );
-    parsed = parseOrThrow(attempt.text);
+    const callCost = costFromUsage(attempt.usage);
+    cost += callCost;
+    await logLLMCall({
+      model: MODEL,
+      phase: "propose",
+      input_tokens: attempt.usage.input_tokens,
+      output_tokens: attempt.usage.output_tokens,
+      latency_ms: Date.now() - start,
+      retries,
+      batch_size: null,
+      cost_usd: callCost,
+    });
+    return attempt;
+  };
+
+  let parsed;
+  try {
+    parsed = parseOrThrow((await callAndLog(null, 0)).text);
+  } catch {
+    parsed = parseOrThrow(
+      (
+        await callAndLog(
+          "Your previous response was not valid JSON. Respond with valid JSON ONLY, no markdown fences or prose.",
+          1,
+        )
+      ).text,
+    );
   }
-  const cost = costFromUsage(attempt.usage);
-  await logLLMCall({
-    model: MODEL,
-    phase: "propose",
-    input_tokens: attempt.usage.input_tokens,
-    output_tokens: attempt.usage.output_tokens,
-    latency_ms: Date.now() - start,
-    retries,
-    batch_size: null,
-    cost_usd: cost,
-  });
   return {
     categories: parsed.categories.map((c) => ({
       ...c,
