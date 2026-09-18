@@ -8,9 +8,13 @@ import {
   type ProposeProgress,
 } from "@/src/lib/llm/propose";
 
+export type ProposeFromCacheProgress = ProposeProgress & {
+  track_count: number;
+};
+
 export async function runProposeFromCache(opts: {
   apiKey: string;
-  onProgress?: (state: ProposeProgress & { track_count: number }) => void;
+  onProgress?: (state: ProposeFromCacheProgress) => void;
 }) {
   const cachePath = join(dataDir(), "cache.json");
   const cache = await readCache(cachePath);
