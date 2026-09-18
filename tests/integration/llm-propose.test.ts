@@ -9,7 +9,7 @@ import {
   beforeEach,
 } from "vitest";
 import { setupServer } from "msw/node";
-import { http } from "msw";
+import { http, HttpResponse } from "msw";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -122,6 +122,29 @@ describe("runPropose", () => {
       .split("\n")
       .map((l) => JSON.parse(l) as { output_tokens: number });
     expect(lines.map((l) => l.output_tokens)).toEqual([50, 300]);
+  });
+
+  it("does not resend (and pay again) when the first call fails for a non-JSON reason", async () => {
+    let call = 0;
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () => {
+        call++;
+        return HttpResponse.json(
+          {
+            type: "error",
+            error: { type: "invalid_request_error", message: "bad request" },
+          },
+          { status: 400 },
+        );
+      }),
+    );
+    await expect(
+      runPropose({
+        apiKey: "sk-ant-x",
+        tracks: [{ id: "t1", title: "X", artist_name: "Y", genres: [] }],
+      }),
+    ).rejects.toThrow(/bad request/);
+    expect(call).toBe(1);
   });
 
   it("completes the LLM call even when onProgress throws (client disconnect)", async () => {

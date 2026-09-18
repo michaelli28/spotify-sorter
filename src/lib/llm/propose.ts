@@ -147,9 +147,11 @@ export async function runPropose(opts: {
     return attempt;
   };
 
+  // Only an unparseable reply is resent; API or logging errors propagate.
+  const first = await callAndLog(null, 0);
   let parsed;
   try {
-    parsed = parseOrThrow((await callAndLog(null, 0)).text);
+    parsed = parseOrThrow(first.text);
   } catch {
     parsed = parseOrThrow(
       (
