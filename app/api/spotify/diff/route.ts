@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { readCache } from "@/src/lib/cache";
 import { withSpotify } from "@/src/lib/spotify/client";
 import { fetchPlaylistTracks, fetchLikedSongs } from "@/src/lib/spotify/tracks";
@@ -7,10 +8,6 @@ import { dedupeTracks } from "@/src/lib/spotify/dedupe";
 import { diffTracks } from "@/src/lib/classification/diff";
 
 export const dynamic = "force-dynamic";
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
-}
 
 function parseSession(req: Request) {
   const m = /sorter_access_token=([^;]+)/.exec(req.headers.get("cookie") ?? "");

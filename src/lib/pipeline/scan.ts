@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import {
   fetchPlaylistTracks,
@@ -19,10 +20,6 @@ export type ProgressCb = (
   current: number,
   total: number,
 ) => void;
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
-}
 
 export async function runScan(opts: {
   accessToken: string;

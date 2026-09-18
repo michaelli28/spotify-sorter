@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { env } from "@/src/lib/config/env";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import { refreshAccessToken } from "./refresh";
@@ -6,10 +7,6 @@ import { refreshAccessToken } from "./refresh";
 export interface Session {
   accessToken: string;
   accessTokenExpiresAt: number;
-}
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
 }
 
 export async function ensureFreshToken(

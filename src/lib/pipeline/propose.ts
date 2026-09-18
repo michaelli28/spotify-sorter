@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { randomBytes } from "node:crypto";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import {
@@ -6,10 +7,6 @@ import {
   type ProposeTrackInput,
   type ProposeProgress,
 } from "@/src/lib/llm/propose";
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
-}
 
 export async function runProposeFromCache(opts: {
   apiKey: string;

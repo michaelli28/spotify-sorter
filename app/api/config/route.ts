@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { dataDir, envFile } from "@/src/lib/config/paths";
 import { z } from "zod";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import { EnvSchema } from "@/src/lib/config/env";
@@ -15,14 +16,6 @@ const Body = z.object({
   anthropic_api_key: z.string().regex(/^sk-ant-/),
   prefix: z.string().min(1).max(8),
 });
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
-}
-
-function envFile(): string {
-  return process.env.SORTER_ENV_FILE ?? join(process.cwd(), ".env.local");
-}
 
 export async function POST(req: Request) {
   const json = await req.json().catch(() => null);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { env } from "@/src/lib/config/env";
 import { exchangeCodeForToken } from "@/src/lib/spotify/auth";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
@@ -14,10 +15,6 @@ function parseCookies(header: string | null): Record<string, string> {
       .map((s) => s.trim().split("=") as [string, string])
       .filter((p) => p[0]),
   );
-}
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
 }
 
 export async function GET(req: Request) {

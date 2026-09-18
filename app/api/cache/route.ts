@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 
 function cachePath(): string {
-  return join(
-    process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data"),
-    "cache.json",
-  );
+  return join(dataDir(), "cache.json");
 }
 
 export async function GET() {

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import { formatPlaylistName } from "@/src/lib/categories/prefix";
 import { categoryMembers } from "@/src/lib/classification/threshold";
@@ -27,10 +28,6 @@ export interface ApplyResult {
     track_count: number;
     created: boolean;
   }>;
-}
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
 }
 
 export async function runApplyFromCache(opts: {

@@ -1,10 +1,7 @@
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
 import { reclassifyAgainstCategory } from "@/src/lib/llm/reclassify";
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
-}
 
 function trimToTop5(matches: Array<{ category_id: string; score: number }>) {
   return [...matches].sort((a, b) => b.score - a.score).slice(0, 5);

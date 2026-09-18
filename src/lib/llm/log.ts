@@ -1,5 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
 
 export interface LLMLogEntry {
   model: string;
@@ -12,10 +13,6 @@ export interface LLMLogEntry {
   retries: number;
   batch_size: number | null;
   cost_usd: number;
-}
-
-function dataDir(): string {
-  return process.env.SORTER_DATA_DIR ?? join(process.cwd(), "data");
 }
 
 export async function logLLMCall(entry: LLMLogEntry): Promise<void> {
