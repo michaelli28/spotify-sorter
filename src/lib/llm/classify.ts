@@ -1,9 +1,11 @@
 import { anthropicClient } from "./client";
 import { ClassifyResponseSchema } from "./schemas";
-import { costFromUsage } from "./cost";
+import { costFromUsage, type Usage } from "./cost";
 import { logLLMCall } from "./log";
 
 const MODEL = "claude-haiku-4-5-20251001";
+const TEMPERATURE = 0.3;
+const MAX_MATCHES = 5;
 
 export interface ClassifyCategory {
   id: string;
@@ -22,12 +24,9 @@ export interface BatchAssignment {
 }
 export interface BatchResult {
   assignments: BatchAssignment[];
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
+  // Sent but not validly answered: left out, repeated, unknown, or no known category.
+  missing: ClassifyTrackInput[];
+  usage: Usage;
   cost_usd: number;
 }
 
@@ -37,140 +36,153 @@ function buildSystem(categories: ClassifyCategory[]): string {
     .join("\n");
   return `You are classifying tracks into the user's personal categories.
 
-For each track, return the TOP 5 categories that fit best with a 0-100 fit score, sorted highest first.
+Each track is on its own line, starting with its number. For every track, return its number and the TOP 5 categories that fit best, each with a 0-100 fit score, highest first. Return every track exactly once.
 
-Use ONLY these category names exactly as written (case-sensitive):
+Categories:
 
-${list}
-
-Respond with valid JSON matching this shape:
-{
-  "tracks": [
-    {
-      "track_id": "string",
-      "matches": [{ "category": "string", "score": 0-100 }]
-    }
-  ]
-}
-
-No markdown fences. No prose outside JSON.`;
+${list}`;
 }
 
 function buildUser(tracks: ClassifyTrackInput[]): string {
   return tracks
-    .map((t) => {
+    .map((t, i) => {
       const g =
         t.genres.length > 0 ? ` [${t.genres.slice(0, 3).join(", ")}]` : "";
-      return `${t.id}\t${t.title} — ${t.artist_name}${g}`;
+      return `${i + 1}\t${t.title} — ${t.artist_name}${g}`;
     })
     .join("\n");
 }
 
-interface AnthropicUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
+// Tracks go out as line numbers and categories as names, both as enums, so the
+// model cannot invent or mangle an ID (it used to rewrite the 22-char Spotify
+// IDs). The API enforces enums but not counts or ranges; parseBatch checks those.
+function outputFormat(categories: ClassifyCategory[], trackCount: number) {
+  return {
+    type: "json_schema" as const,
+    schema: {
+      type: "object",
+      properties: {
+        tracks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              n: {
+                type: "integer",
+                enum: Array.from({ length: trackCount }, (_, i) => i + 1),
+              },
+              matches: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    category: {
+                      type: "string",
+                      enum: [...new Set(categories.map((c) => c.name))],
+                    },
+                    score: { type: "integer" },
+                  },
+                  required: ["category", "score"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["n", "matches"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["tracks"],
+      additionalProperties: false,
+    },
+  };
 }
 
-async function callOnce(
-  apiKey: string,
-  system: string,
-  user: string,
-  reminder: string | null,
-) {
-  const client = anthropicClient(apiKey);
-  const resp = await client.messages.create({
-    model: MODEL,
-    max_tokens: 16_000,
-    stream: false,
-    system: [
-      { type: "text", text: system, cache_control: { type: "ephemeral" } },
-    ],
-    messages: [
-      { role: "user", content: reminder ? `${reminder}\n\n${user}` : user },
-    ],
-    temperature: reminder ? 0.0 : 0.3,
-  });
-  const text = resp.content
-    .map((c) => (c.type === "text" ? c.text : ""))
-    .join("")
-    .trim();
-  const u = resp.usage as AnthropicUsage;
-  return { text, usage: u };
-}
-
-function stripFences(text: string): string {
-  const trimmed = text.trim();
-  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  if (fenceMatch) return fenceMatch[1].trim();
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace > 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
-  }
-  return trimmed;
-}
-
-function parseOrThrow(text: string) {
-  const cleaned = stripFences(text);
-  let json: unknown;
+export function parseBatch(
+  text: string,
+  tracks: ClassifyTrackInput[],
+  categories: ClassifyCategory[],
+): Pick<BatchResult, "assignments" | "missing"> {
+  let rows;
   try {
-    json = JSON.parse(cleaned);
+    rows = ClassifyResponseSchema.parse(JSON.parse(text)).tracks;
   } catch {
-    throw new Error(`Classify returned non-JSON: ${cleaned.slice(0, 200)}`);
+    // Truncated or refused output: resend the whole batch.
+    return { assignments: [], missing: tracks };
   }
-  return ClassifyResponseSchema.parse(json);
+  const idByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+  const timesReturned = new Map<number, number>();
+  for (const row of rows) {
+    timesReturned.set(row.n, (timesReturned.get(row.n) ?? 0) + 1);
+  }
+
+  const assignments: BatchAssignment[] = [];
+  const answered = new Set<number>();
+  for (const row of rows) {
+    const track = tracks[row.n - 1];
+    // Unknown numbers are dropped; a number returned twice is ambiguous.
+    if (!track || timesReturned.get(row.n) !== 1) continue;
+    const best = new Map<string, number>();
+    for (const m of row.matches) {
+      const id = idByName.get(m.category.toLowerCase());
+      if (!id || !Number.isInteger(m.score) || m.score < 0 || m.score > 100) {
+        continue;
+      }
+      best.set(id, Math.max(best.get(id) ?? -1, m.score));
+    }
+    const matches = [...best]
+      .map(([category_id, score]) => ({ category_id, score }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_MATCHES);
+    // Zero-match guard: an empty assignment fails the cache schema and aborts
+    // the whole run at writeCache, so the track is resent instead.
+    if (matches.length === 0) continue;
+    assignments.push({ track_id: track.id, matches });
+    answered.add(row.n);
+  }
+  return {
+    assignments,
+    missing: tracks.filter((_, i) => !answered.has(i + 1)),
+  };
 }
 
 export async function classifyBatch(opts: {
   apiKey: string;
   categories: ClassifyCategory[];
   tracks: ClassifyTrackInput[];
+  attempt?: number;
 }): Promise<BatchResult> {
   const start = Date.now();
-  const system = buildSystem(opts.categories);
-  const user = buildUser(opts.tracks);
-  const nameToId = new Map(opts.categories.map((c) => [c.name, c.id]));
-
-  let retries = 0;
-  let attempt = await callOnce(opts.apiKey, system, user, null);
-  let parsed;
-  try {
-    parsed = parseOrThrow(attempt.text);
-  } catch {
-    retries++;
-    attempt = await callOnce(
-      opts.apiKey,
-      system,
-      user,
-      "Previous response was not valid JSON. Respond with JSON only.",
-    );
-    parsed = parseOrThrow(attempt.text);
-  }
-
-  const assignments: BatchAssignment[] = parsed.tracks.map((t) => ({
-    track_id: t.track_id,
-    matches: t.matches
-      .map((m) => ({ category_id: nameToId.get(m.category), score: m.score }))
-      .filter((m): m is { category_id: string; score: number } =>
-        Boolean(m.category_id),
-      ),
-  }));
-
-  const cost = costFromUsage(attempt.usage);
+  const resp = await anthropicClient(opts.apiKey).messages.create({
+    model: MODEL,
+    max_tokens: 16_000,
+    temperature: TEMPERATURE,
+    system: buildSystem(opts.categories),
+    messages: [{ role: "user", content: buildUser(opts.tracks) }],
+    output_config: {
+      format: outputFormat(opts.categories, opts.tracks.length),
+    },
+  });
+  const text = resp.content
+    .map((c) => (c.type === "text" ? c.text : ""))
+    .join("");
+  const usage = {
+    input_tokens: resp.usage.input_tokens,
+    output_tokens: resp.usage.output_tokens,
+  };
+  const cost = costFromUsage(usage);
   await logLLMCall({
     model: MODEL,
     phase: "classify",
-    input_tokens: attempt.usage.input_tokens,
-    output_tokens: attempt.usage.output_tokens,
-    cache_read_input_tokens: attempt.usage.cache_read_input_tokens,
-    cache_creation_input_tokens: attempt.usage.cache_creation_input_tokens,
+    ...usage,
     latency_ms: Date.now() - start,
-    retries,
+    retries: opts.attempt ?? 0,
     batch_size: opts.tracks.length,
     cost_usd: cost,
   });
-
-  return { assignments, usage: attempt.usage, cost_usd: cost };
+  return {
+    ...parseBatch(text, opts.tracks, opts.categories),
+    usage,
+    cost_usd: cost,
+  };
 }

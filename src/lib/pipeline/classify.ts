@@ -15,7 +15,10 @@ export interface ClassifyResult {
   cost_usd: number;
 }
 
+const BATCH_SIZE = 50;
 const MAX_IN_FLIGHT = 3;
+// First pass plus two resends of tracks the model left out or garbled.
+const MAX_ROUNDS = 3;
 
 // Runs tasks with at most `limit` in flight. After the first failure it starts
 // nothing new, lets in-flight tasks finish (their calls are already paid for),
@@ -61,10 +64,11 @@ export async function runClassifyFromCache(opts: {
 
   const startedAt = new Date().toISOString();
   const totalTracks = Object.keys(cache.tracks).length;
-  const alreadyClassified = Object.keys(cache.assignments).length;
   const unclassifiedIds = Object.keys(cache.tracks).filter(
     (id) => !cache.assignments[id],
   );
+  // Counted from tracks, not assignment keys, so orphan keys can't inflate it.
+  const alreadyClassified = totalTracks - unclassifiedIds.length;
   const inputs: ClassifyTrackInput[] = unclassifiedIds.map((id) => {
     const t = cache.tracks[id]!;
     const a = cache.artists[t.artist_id];
@@ -88,17 +92,16 @@ export async function runClassifyFromCache(opts: {
         tracks_classified: 0,
         tracks_total: totalTracks,
         cost_usd: 0,
-        summary: `All ${alreadyClassified} tracks already classified — no Claude call needed.`,
+        summary: `All ${totalTracks} tracks already classified — no Claude call needed.`,
       },
     ];
     await writeCache(cachePath, patchCache(cache, { runs }));
     return { tracks_classified: 0, cost_usd: 0 };
   }
 
-  const batches = chunkInto(inputs, 50);
-
   let totalCost = 0;
   let doneBatches = 0;
+  let totalBatches = 0;
   let newAssignments = 0;
   const merged = { ...cache.assignments };
 
@@ -109,7 +112,7 @@ export async function runClassifyFromCache(opts: {
     return next as Promise<T>;
   };
 
-  const recordRun = (summary: string) =>
+  const recordRun = (summary: string, skipped?: string[]) =>
     enqueueWrite(async () => {
       const finalCache = await readCache(cachePath);
       const runs = [
@@ -123,45 +126,55 @@ export async function runClassifyFromCache(opts: {
           tracks_total: totalTracks,
           cost_usd: totalCost,
           summary,
+          ...(skipped && skipped.length > 0 ? { skipped } : {}),
         },
       ];
       await writeCache(cachePath, patchCache(finalCache, { runs }));
     });
 
+  let pending = inputs;
   try {
-    await runLimited(
-      batches.map((batch) => async () => {
-        const r = await classifyBatch({
-          apiKey: opts.apiKey,
-          categories,
-          tracks: batch,
-        });
-        const now = new Date().toISOString();
-        await enqueueWrite(async () => {
-          for (const a of r.assignments) {
-            merged[a.track_id] = {
-              matches: a.matches,
-              classified_at: now,
-              override: null,
-            };
+    for (let round = 0; round < MAX_ROUNDS && pending.length > 0; round++) {
+      const batches = chunkInto(pending, BATCH_SIZE);
+      totalBatches += batches.length;
+      const missing: ClassifyTrackInput[] = [];
+      await runLimited(
+        batches.map((batch) => async () => {
+          const r = await classifyBatch({
+            apiKey: opts.apiKey,
+            categories,
+            tracks: batch,
+            attempt: round,
+          });
+          totalCost += r.cost_usd;
+          missing.push(...r.missing);
+          const now = new Date().toISOString();
+          await enqueueWrite(async () => {
+            for (const a of r.assignments) {
+              merged[a.track_id] = {
+                matches: a.matches,
+                classified_at: now,
+                override: null,
+              };
+            }
+            await writeCache(
+              cachePath,
+              patchCache(cache, { assignments: { ...merged } }),
+            );
+          });
+          newAssignments += r.assignments.length;
+          doneBatches++;
+          try {
+            onProgress("batch", doneBatches, totalBatches);
+          } catch {
+            // Progress reporting must never abort batch processing
+            // (e.g. client disconnected the SSE stream).
           }
-          await writeCache(
-            cachePath,
-            patchCache(cache, { assignments: { ...merged } }),
-          );
-        });
-        newAssignments += r.assignments.length;
-        totalCost += r.cost_usd;
-        doneBatches++;
-        try {
-          onProgress("batch", doneBatches, batches.length);
-        } catch {
-          // Progress reporting must never abort batch processing
-          // (e.g. client disconnected the SSE stream).
-        }
-      }),
-      MAX_IN_FLIGHT,
-    );
+        }),
+        MAX_IN_FLIGHT,
+      );
+      pending = missing;
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     await recordRun(
@@ -170,10 +183,16 @@ export async function runClassifyFromCache(opts: {
     throw err;
   }
 
-  await recordRun(
+  const skipped = pending.map((t) => t.id);
+  const done =
     alreadyClassified > 0
       ? `Classified ${newAssignments} new tracks. ${alreadyClassified} reused from cache.`
-      : `Classified ${newAssignments} tracks across ${categories.length} categories.`,
+      : `Classified ${newAssignments} tracks across ${categories.length} categories.`;
+  await recordRun(
+    skipped.length > 0
+      ? `${done} ${skipped.length} skipped: no valid answer after ${MAX_ROUNDS} tries.`
+      : done,
+    skipped,
   );
 
   return { tracks_classified: newAssignments, cost_usd: totalCost };

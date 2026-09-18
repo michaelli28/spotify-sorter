@@ -84,7 +84,7 @@ async function echoAllTracks(request: Request) {
         type: "text",
         text: JSON.stringify({
           tracks: keys.map((k) => ({
-            track_id: k,
+            n: Number(k),
             matches: [{ category: "Chill Vibes", score: 80 }],
           })),
         }),

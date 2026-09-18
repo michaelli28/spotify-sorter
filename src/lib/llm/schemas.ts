@@ -12,18 +12,20 @@ export const ProposeResponseSchema = z.object({
   categories: z.array(ProposedCategorySchema).min(1).max(50),
 });
 
+// Shape only: per-track checks (known number, score range, known category,
+// at most 5 matches) happen in parseBatch so one bad row can't sink a batch.
 export const ClassifyMatchSchema = z.object({
-  category: z.string().min(1),
-  score: z.number().int().min(0).max(100),
+  category: z.string(),
+  score: z.number(),
 });
 
 export const ClassifyTrackSchema = z.object({
-  track_id: z.string().min(1),
-  matches: z.array(ClassifyMatchSchema).min(0).max(5),
+  n: z.number(),
+  matches: z.array(ClassifyMatchSchema),
 });
 
 export const ClassifyResponseSchema = z.object({
-  tracks: z.array(ClassifyTrackSchema).min(1),
+  tracks: z.array(ClassifyTrackSchema),
 });
 
 export type ProposedCategory = z.infer<typeof ProposedCategorySchema>;
