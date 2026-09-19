@@ -4,7 +4,7 @@ import { dataDir } from "@/src/lib/config/paths";
 
 export interface LLMLogEntry {
   model: string;
-  phase: "propose" | "classify" | "reclassify" | "validate";
+  phase: "propose" | "classify" | "reclassify" | "validate" | "context-test";
   input_tokens: number;
   output_tokens: number;
   cache_read_input_tokens?: number;

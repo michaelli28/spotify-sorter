@@ -8,6 +8,7 @@ const MODEL = "claude-haiku-4-5-20251001";
 // can attribute decision flips to batch neighbors, not sampling.
 const TEMPERATURE = 0;
 const MAX_MATCHES = 5;
+export const CLASSIFY_MAX_OUTPUT_TOKENS = 16_000;
 
 export interface ClassifyCategory {
   id: string;
@@ -153,11 +154,13 @@ export async function classifyBatch(opts: {
   categories: ClassifyCategory[];
   tracks: ClassifyTrackInput[];
   attempt?: number;
+  // Tags the log row, so a study's spend stays separable from real classifies.
+  logPhase?: "classify" | "context-test";
 }): Promise<BatchResult> {
   const start = Date.now();
   const resp = await anthropicClient(opts.apiKey).messages.create({
     model: MODEL,
-    max_tokens: 16_000,
+    max_tokens: CLASSIFY_MAX_OUTPUT_TOKENS,
     temperature: TEMPERATURE,
     system: buildSystem(opts.categories),
     messages: [{ role: "user", content: buildUser(opts.tracks) }],
@@ -175,7 +178,7 @@ export async function classifyBatch(opts: {
   const cost = costFromUsage(usage);
   await logLLMCall({
     model: MODEL,
-    phase: "classify",
+    phase: opts.logPhase ?? "classify",
     ...usage,
     latency_ms: Date.now() - start,
     retries: opts.attempt ?? 0,
