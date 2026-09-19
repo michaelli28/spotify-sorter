@@ -1,0 +1,147 @@
+import { NextResponse } from "next/server";
+import { join } from "node:path";
+import { z } from "zod";
+import { dataDir } from "@/src/lib/config/paths";
+import { readCache, type Cache } from "@/src/lib/cache";
+import { rejectCrossSite } from "@/src/lib/http/same-origin";
+import {
+  DefinitionsError,
+  definitionsSha256,
+} from "@/src/lib/labeling/definitions";
+import {
+  appendLabel,
+  buildLabelState,
+  defineCategories,
+  readDefinitionsFile,
+  readLabels,
+  readSample,
+  relabelOpensAt,
+} from "@/src/lib/labeling/store";
+import {
+  LabelInputSchema,
+  type LabelInput,
+  type LabelRow,
+  type LabelSample,
+} from "@/src/lib/labeling/schema";
+
+export const dynamic = "force-dynamic";
+
+// Serves the blind labeling page. Only tracks, artists and categories leave
+// the cache here; the sample's design file (score bins) is never read.
+
+const cachePath = () => join(dataDir(), "cache.json");
+
+function fail(status: number, error: string, message?: string) {
+  return NextResponse.json(message ? { error, message } : { error }, {
+    status,
+  });
+}
+
+export async function GET() {
+  const sample = await readSample();
+  if (!sample) return fail(404, "no_sample");
+  const definitions = await readDefinitionsFile();
+  if (definitions === null) return fail(404, "no_definitions");
+  const { tracks, artists, categories } = await readCache(cachePath());
+  const labels = await readLabels();
+  try {
+    return NextResponse.json(
+      buildLabelState({
+        tracks,
+        artists,
+        categories,
+        sample,
+        definitions,
+        definitionsSha: definitionsSha256(definitions),
+        labels,
+      }),
+    );
+  } catch (err) {
+    if (err instanceof DefinitionsError)
+      return fail(422, "bad_definitions", err.message);
+    throw err;
+  }
+}
+
+export async function POST(req: Request) {
+  const blocked = rejectCrossSite(req);
+  if (blocked) return blocked;
+  const parsed = LabelInputSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success)
+    return fail(400, "bad_body", z.prettifyError(parsed.error));
+  const input = parsed.data;
+
+  const sample = await readSample();
+  if (!sample) return fail(404, "no_sample");
+  const definitions = await readDefinitionsFile();
+  if (definitions === null) return fail(404, "no_definitions");
+  if (input.definitions_sha256 !== definitionsSha256(definitions))
+    return fail(409, "definitions_changed");
+
+  // The hash covers the file, not which id each heading names: re-match it so
+  // a category renamed since the page loaded can't take a stale label.
+  const { categories } = await readCache(cachePath());
+  try {
+    defineCategories(definitions, categories);
+  } catch (err) {
+    if (err instanceof DefinitionsError)
+      return fail(422, "bad_definitions", err.message);
+    throw err;
+  }
+
+  const row = await toRow(input, { sample, categories });
+  if (row instanceof Response) return row;
+  await appendLabel(row);
+  return NextResponse.json({ ok: true });
+}
+
+// Checks the label against the sample and the cache, then stamps it.
+async function toRow(
+  input: LabelInput,
+  {
+    sample,
+    categories,
+  }: { sample: LabelSample; categories: Cache["categories"] },
+): Promise<LabelRow | Response> {
+  const labeled_at = new Date().toISOString();
+
+  if (input.kind === "pair") {
+    const pair = sample.pairs.find((p) => p.pair_id === input.pair_id);
+    if (!pair)
+      return fail(400, "not_in_sample", `Unknown pair ${input.pair_id}`);
+    if (!categories[pair.category_id])
+      return fail(
+        400,
+        "unknown_category",
+        `Unknown category ${pair.category_id}`,
+      );
+    return {
+      ...input,
+      track_id: pair.track_id,
+      category_id: pair.category_id,
+      labeled_at,
+    };
+  }
+
+  const allowed =
+    input.pass === 1 ? sample.random_track_ids : sample.relabel_track_ids;
+  if (!allowed.includes(input.track_id))
+    return fail(
+      400,
+      "not_in_sample",
+      `Track ${input.track_id} is not in the pass-${input.pass} set`,
+    );
+  const unknown = input.category_ids.filter((id) => !categories[id]);
+  if (unknown.length > 0)
+    return fail(
+      400,
+      "unknown_category",
+      `Unknown categories: ${unknown.join(", ")}`,
+    );
+  if (input.pass === 2) {
+    const opensAt = relabelOpensAt(await readLabels()).get(input.track_id);
+    if (!opensAt || Date.parse(opensAt) > Date.now())
+      return fail(403, "relabel_not_open");
+  }
+  return { ...input, labeled_at };
+}
