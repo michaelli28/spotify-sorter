@@ -29,26 +29,32 @@ export function costFromUsage(u: Usage): number {
 interface EstimateOpts {
   tracks: number;
   categories: number;
-  phase: "propose" | "classify";
+  phase: "propose";
 }
 
 const TOKENS_PER_TRACK_LINE = 30;
 const PROPOSE_OUTPUT_TOKENS = 4_000;
-const CLASSIFY_OUTPUT_TOKENS_PER_TRACK = 25;
 
 export function estimateCostUSD(opts: EstimateOpts): number {
-  if (opts.phase === "propose") {
-    return costFromUsage({
-      input_tokens: opts.tracks * TOKENS_PER_TRACK_LINE + 1_500,
-      output_tokens: PROPOSE_OUTPUT_TOKENS,
-    });
-  }
-  const batches = Math.ceil(opts.tracks / 50);
-  const systemPromptTokens = 1_500 + opts.categories * 60;
   return costFromUsage({
-    input_tokens: batches * (50 * TOKENS_PER_TRACK_LINE),
-    output_tokens: opts.tracks * CLASSIFY_OUTPUT_TOKENS_PER_TRACK,
-    cache_read_input_tokens: (batches - 1) * systemPromptTokens,
-    cache_creation_input_tokens: systemPromptTokens,
+    input_tokens: opts.tracks * TOKENS_PER_TRACK_LINE + 1_500,
+    output_tokens: PROPOSE_OUTPUT_TOKENS,
   });
+}
+
+// Min and max per-track cost across the 57 full 50-track batches of the
+// 2026-09-18 re-classify (41 categories, temperature 0; $1.675 for 2,875
+// tracks). Check against the next real run before trusting the range.
+export const CLASSIFY_USD_PER_TRACK = { low: 0.000551, high: 0.000635 };
+
+// Measured, not modelled: the old estimate assumed 25 output tokens per track
+// and cached prompts (real: ~186 and never cached), and came out 6x low.
+export function estimateClassifyCost(tracks: number): {
+  low: number;
+  high: number;
+} {
+  return {
+    low: tracks * CLASSIFY_USD_PER_TRACK.low,
+    high: tracks * CLASSIFY_USD_PER_TRACK.high,
+  };
 }

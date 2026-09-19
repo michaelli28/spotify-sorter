@@ -9,7 +9,7 @@ import { AddCategoryForm } from "@/src/components/review/AddCategoryForm";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
 import { TrackSearchModal } from "@/src/components/review/TrackSearchModal";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
-import { estimateCostUSD } from "@/src/lib/llm/cost";
+import { estimateCostUSD, estimateClassifyCost } from "@/src/lib/llm/cost";
 import type { DraftCategory } from "@/src/lib/categories/merge";
 import type { TrackLookupEntry } from "@/src/components/review/CategoryCard";
 
@@ -203,18 +203,8 @@ export default function ReviewPage() {
   }
 
   const tracksLeftToClassify = Math.max(0, trackCount - assignmentCount);
-  const lowEst = estimateCostUSD({
-    tracks: tracksLeftToClassify,
-    categories: draft.length,
-    phase: "classify",
-  });
-  const highEst = lowEst * 2;
-  const fullCostEst =
-    estimateCostUSD({
-      tracks: trackCount,
-      categories: draft.length,
-      phase: "classify",
-    }) * 2;
+  const classifyEst = estimateClassifyCost(tracksLeftToClassify);
+  const fullCostEst = estimateClassifyCost(trackCount).high;
   const lastPropose = [...runs]
     .reverse()
     .find((r) => r.type === "propose" || (!r.type && r.cost_usd > 0));
@@ -288,7 +278,7 @@ export default function ReviewPage() {
       )}
       <CostPreviewModal
         open={confirming}
-        estimateUsd={{ low: lowEst, high: highEst }}
+        estimateUsd={classifyEst}
         message={
           tracksLeftToClassify === 0
             ? `All ${trackCount} tracks are already classified — Claude won't be called.`
