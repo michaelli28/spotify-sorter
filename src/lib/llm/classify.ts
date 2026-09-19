@@ -4,7 +4,9 @@ import { costFromUsage, type Usage } from "./cost";
 import { logLLMCall } from "./log";
 
 const MODEL = "claude-haiku-4-5-20251001";
-const TEMPERATURE = 0.3;
+// Fixed at 0 so repeat runs differ as little as possible and the Day 3-4 test
+// can attribute decision flips to batch neighbors, not sampling.
+const TEMPERATURE = 0;
 const MAX_MATCHES = 5;
 
 export interface ClassifyCategory {

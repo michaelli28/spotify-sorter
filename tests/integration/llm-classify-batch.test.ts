@@ -127,6 +127,11 @@ describe("classifyBatch request", () => {
     });
   });
 
+  it("samples at temperature 0, so repeat runs isolate neighbor effects", async () => {
+    const body = await captureRequest(both);
+    expect(body.temperature).toBe(0);
+  });
+
   it("does not ask for reasoning text or prompt caching", async () => {
     const body = await captureRequest(both);
     expect(JSON.stringify(body)).not.toMatch(/reasoning/i);
