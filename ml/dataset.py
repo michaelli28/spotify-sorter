@@ -94,6 +94,10 @@ def load(require_sha: str | None = None) -> Dataset:
 
     blocks = {
         "clap": emb["clap"],
+        # Text tower over "title — artist": the ablation, not a strawman. Only
+        # present once ml/embed-text.py has run; its rows are in the same order
+        # as embeddings.npz, which is checked below rather than trusted.
+        **_text_block(emb["isrc"]),
         "ess_emb": emb["ess_emb"],
         "ess_mood": emb["ess_mood"],
         "mert1_full": emb["mert1_full"],
@@ -111,6 +115,19 @@ def load(require_sha: str | None = None) -> Dataset:
         artist_names=artist_names.astype(str),
         duplicate_pairs=dup_pairs,
     )
+
+
+def _text_block(isrc: np.ndarray) -> dict[str, np.ndarray]:
+    path = ART / "text-clap.npz"
+    if not path.exists():
+        return {}
+    d = np.load(path)
+    if not np.array_equal(d["isrc"], isrc):
+        raise SystemExit(
+            "text-clap.npz row order does not match embeddings.npz — "
+            "re-run ml/embed-text.py rather than joining these by position."
+        )
+    return {"clap_text": d["clap_text"]}
 
 
 def grouped_folds(groups: np.ndarray, k: int = 5, seed: int = 0) -> np.ndarray:

@@ -274,6 +274,8 @@ def main() -> None:
 
     CONFIGS = {
         "clap": ["clap"],
+        "TEXT-ONLY (clap text)": ["clap_text"],
+        "text+audio": ["clap_text", "mert2"],
         "essentia": ["ess_emb"],
         "mert1-full30s": ["mert1_full"],
         "mert1-win5": ["mert1_win5"],
