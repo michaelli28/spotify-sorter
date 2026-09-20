@@ -41,6 +41,7 @@ function trackRow(over: Partial<LabelRow> = {}): LabelRow {
     cant_judge: false,
     elapsed_ms: 1200,
     definitions_sha256: SHA,
+    set: "random",
     labeled_at: T0,
     ...over,
   } as LabelRow;

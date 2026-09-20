@@ -1,10 +1,13 @@
 import { seededRandom, shuffled } from "@/src/lib/labeling/rng";
 import type { LabelState } from "@/src/lib/labeling/schema";
 
-export type Mode = "songs" | "pairs" | "relabel";
+export type Mode = "songs" | "pairs" | "gold" | "relabel";
 export const MODES: ReadonlyArray<{ id: Mode; label: string }> = [
   { id: "songs", label: "Songs" },
   { id: "pairs", label: "Pairs" },
+  // Before Relabel, which stays locked for 48 h and would otherwise be the
+  // first unfinished mode the page opens on.
+  { id: "gold", label: "Gold set" },
   { id: "relabel", label: "Relabel" },
 ];
 
@@ -71,6 +74,7 @@ export function forwardIndex(
 export function itemsFor(state: LabelState, mode: Mode): readonly Item[] {
   if (mode === "songs") return state.random;
   if (mode === "pairs") return state.pairs;
+  if (mode === "gold") return state.gold;
   return state.relabel;
 }
 
@@ -111,10 +115,11 @@ export function markDone(
       ),
     };
   }
-  if (mode === "songs") {
+  if (mode === "songs" || mode === "gold") {
+    const key = mode === "songs" ? "random" : "gold";
     return {
       ...state,
-      random: state.random.map((t) =>
+      [key]: state[key].map((t) =>
         t.track_id === id ? { ...t, done: true } : t,
       ),
     };

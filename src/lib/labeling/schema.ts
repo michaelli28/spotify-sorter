@@ -6,6 +6,12 @@ import { z } from "zod";
 // - Labels are append-only rows; the latest row per item wins in analysis.
 
 export const LABEL_SEED = "spotifysorter-labels-2026-09-19";
+// Second, separate pre-registration: the gold set for the audio-student
+// comparison, drawn only from songs whose artist has no genre tags (the only
+// place that claim lives). Its own seed, its own file; the first sample is
+// never edited or redrawn.
+export const GOLD_SEED = "spotifysorter-gold-nogenre-2026-09-19";
+export const GOLD_TRACKS = 190;
 export const RANDOM_TRACKS = 100;
 export const PAIRS_PER_BIN = 25;
 export const RELABEL_TRACKS = 30;
@@ -46,6 +52,22 @@ export const LabelSampleSchema = z.object({
   relabel_track_ids: z.array(z.string()),
 });
 export type LabelSample = z.infer<typeof LabelSampleSchema>;
+
+// data/labels/gold-sample.json: a plain uniform draw from the no-genre songs
+// not already sampled. No scores enter the draw, so there is no design file.
+export const GoldSampleSchema = z.object({
+  seed: z.string(),
+  created_at: IsoDate,
+  pool: z.object({
+    // Songs whose artist carries no genre tags.
+    no_genre: z.number().int().min(0),
+    // Of those, the ones already in sample.json (labeled there, not redrawn).
+    already_sampled: z.number().int().min(0),
+    eligible: z.number().int().min(0),
+  }),
+  track_ids: z.array(z.string()),
+});
+export type GoldSample = z.infer<typeof GoldSampleSchema>;
 
 // data/labels/sample-design.json: how the pairs were drawn, for inverse-
 // probability weights. Holds score bins, so the label page never reads it.
@@ -90,6 +112,9 @@ export const TrackLabelInputSchema = z
     cant_judge: z.boolean(),
     elapsed_ms: z.number().int().min(0),
     definitions_sha256: z.string().min(1),
+    // Which pre-registered draw the song came from. Rows written before the
+    // gold draw existed carry no field, so they default to the first sample.
+    set: z.enum(["random", "gold"]).default("random"),
   })
   .refine((l) => !l.cant_judge || l.category_ids.length === 0, {
     message: "cant_judge labels carry no categories",
@@ -136,6 +161,8 @@ export interface LabelState {
   definitions_sha256: string;
   categories: Array<{ id: string; name: string; definition: string }>;
   random: Array<LabelTrack & { done: boolean }>;
+  // The gold set: no-genre songs from the second draw. Empty when it is absent.
+  gold: Array<LabelTrack & { done: boolean }>;
   pairs: Array<
     LabelTrack & { pair_id: string; category_id: string; done: boolean }
   >;

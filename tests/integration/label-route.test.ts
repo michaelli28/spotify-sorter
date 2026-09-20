@@ -118,11 +118,19 @@ const SHA = createHash("sha256").update(DEFINITIONS).digest("hex");
 const labelsDir = () => join(dir, "labels");
 const labelsFile = () => join(labelsDir(), "labels.jsonl");
 
+const GOLD = {
+  seed: "gold-seed",
+  created_at: T0,
+  pool: { no_genre: 2, already_sampled: 0, eligible: 2 },
+  track_ids: ["t_c", "t_d"],
+};
+
 async function seed(
   opts: {
     sample?: boolean;
     definitions?: string | null;
     labels?: object[];
+    gold?: boolean;
   } = {},
 ) {
   await writeFile(join(dir, "cache.json"), JSON.stringify(fixtureCache()));
@@ -133,6 +141,11 @@ async function seed(
     await writeFile(
       join(labelsDir(), "definitions.md"),
       opts.definitions ?? DEFINITIONS,
+    );
+  if (opts.gold)
+    await writeFile(
+      join(labelsDir(), "gold-sample.json"),
+      JSON.stringify(GOLD),
     );
   if (opts.labels)
     await writeFile(
@@ -167,7 +180,7 @@ function trackInput(over: Record<string, unknown> = {}) {
 }
 
 function pass1Row(track_id: string, labeled_at: string) {
-  return { ...trackInput({ track_id }), labeled_at };
+  return { ...trackInput({ track_id }), set: "random", labeled_at };
 }
 
 async function writtenLines(): Promise<unknown[]> {
@@ -295,8 +308,9 @@ describe("POST /api/label", () => {
     expect(lines).toHaveLength(1);
     const row = lines[0] as Record<string, unknown>;
     expect(LabelRowSchema.safeParse(row).success).toBe(true);
+    // "set" is defaulted by the schema when the page leaves it out.
     expect(Object.keys(row).sort()).toEqual(
-      [...Object.keys(trackInput()), "labeled_at"].sort(),
+      [...Object.keys(trackInput()), "set", "labeled_at"].sort(),
     );
     expect(row).toMatchObject(trackInput());
     const at = Date.parse(row.labeled_at as string);
@@ -503,5 +517,53 @@ describe("POST /api/label", () => {
       expect(lines).toHaveLength(3);
       expect(lines[2]).toMatchObject({ track_id: "t_a", pass: 2 });
     });
+  });
+});
+
+describe("the gold set", () => {
+  it("is empty in the state until its own sample exists", async () => {
+    await seed();
+    expect((await (await GET()).json()).gold).toEqual([]);
+  });
+
+  it("is served as its own list and accepts a pass-1 label", async () => {
+    await seed({ gold: true });
+    const state = await (await GET()).json();
+    expect(state.gold.map((g: { track_id: string }) => g.track_id)).toEqual([
+      "t_c",
+      "t_d",
+    ]);
+    // Same blind shape as the other lists: no score reaches the page.
+    expect(JSON.stringify(state.gold)).not.toMatch(/score|matches|rank|bin/);
+
+    const res = await POST(
+      post(trackInput({ track_id: "t_c", set: "gold" })),
+    );
+    expect(res.status).toBe(200);
+    const [row] = (await writtenLines()) as Array<Record<string, unknown>>;
+    expect(row).toMatchObject({ track_id: "t_c", set: "gold", pass: 1 });
+    expect((await (await GET()).json()).gold[0]).toMatchObject({ done: true });
+  });
+
+  it("refuses a song from the other draw, and a second pass", async () => {
+    await seed({ gold: true });
+    const wrongSet = await POST(
+      post(trackInput({ track_id: "t_a", set: "gold" })),
+    );
+    expect(wrongSet.status).toBe(400);
+    expect((await wrongSet.json()).error).toBe("not_in_sample");
+
+    const pass2 = await POST(
+      post(trackInput({ track_id: "t_c", set: "gold", pass: 2 })),
+    );
+    expect(pass2.status).toBe(400);
+    expect(await writtenLines()).toEqual([]);
+  });
+
+  it("refuses a gold song posted as a random-set label", async () => {
+    await seed({ gold: true });
+    const res = await POST(post(trackInput({ track_id: "t_c" })));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("not_in_sample");
   });
 });

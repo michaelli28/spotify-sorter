@@ -13,6 +13,7 @@ import {
   buildLabelState,
   defineCategories,
   readDefinitionsFile,
+  readGoldSample,
   readLabels,
   readSample,
   relabelOpensAt,
@@ -21,6 +22,7 @@ import {
   LabelInputSchema,
   type LabelInput,
   type LabelRow,
+  type GoldSample,
   type LabelSample,
 } from "@/src/lib/labeling/schema";
 
@@ -51,6 +53,7 @@ export async function GET() {
         artists,
         categories,
         sample,
+        gold: await readGoldSample(),
         definitions,
         definitionsSha: definitionsSha256(definitions),
         labels,
@@ -89,7 +92,11 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  const row = await toRow(input, { sample, categories });
+  const row = await toRow(input, {
+    sample,
+    gold: await readGoldSample(),
+    categories,
+  });
   if (row instanceof Response) return row;
   await appendLabel(row);
   return NextResponse.json({ ok: true });
@@ -100,8 +107,13 @@ async function toRow(
   input: LabelInput,
   {
     sample,
+    gold,
     categories,
-  }: { sample: LabelSample; categories: Cache["categories"] },
+  }: {
+    sample: LabelSample;
+    gold: GoldSample | null;
+    categories: Cache["categories"];
+  },
 ): Promise<LabelRow | Response> {
   const labeled_at = new Date().toISOString();
 
@@ -123,13 +135,21 @@ async function toRow(
     };
   }
 
+  // A gold song is only ever a first pass; the 48 h relabel covers the
+  // random set only.
+  if (input.set === "gold" && input.pass !== 1)
+    return fail(400, "not_in_sample", "The gold set has no pass 2");
   const allowed =
-    input.pass === 1 ? sample.random_track_ids : sample.relabel_track_ids;
+    input.set === "gold"
+      ? (gold?.track_ids ?? [])
+      : input.pass === 1
+        ? sample.random_track_ids
+        : sample.relabel_track_ids;
   if (!allowed.includes(input.track_id))
     return fail(
       400,
       "not_in_sample",
-      `Track ${input.track_id} is not in the pass-${input.pass} set`,
+      `Track ${input.track_id} is not in the ${input.set} pass-${input.pass} set`,
     );
   const unknown = input.category_ids.filter((id) => !categories[id]);
   if (unknown.length > 0)

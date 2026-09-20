@@ -43,6 +43,7 @@ function state(over: Partial<LabelState> = {}): LabelState {
       { ...track("t2", "Second Song"), done: false },
       { ...track("t3", "Third Song"), done: true },
     ],
+    gold: [],
     pairs: [
       {
         ...track("t9", "Pair Song"),
@@ -561,5 +562,61 @@ describe("LabelApp: modes", () => {
     expect(
       await screen.findByText(`Next relabel opens ${formatLocal(future)}.`),
     ).toBeInTheDocument();
+  });
+});
+
+describe("LabelApp: gold set", () => {
+  const withGold = (over: Partial<LabelState> = {}) =>
+    state({
+      gold: [
+        { ...track("g1", "Gold One"), done: false },
+        { ...track("g2", "Gold Two"), done: false },
+      ],
+      ...over,
+    });
+
+  it("labels a gold song as pass 1 of the gold set", async () => {
+    const { posts } = stubServer(withGold());
+    render(<LabelApp />);
+    await heading("First Song");
+    await userEvent.click(screen.getByRole("button", { name: "Gold set" }));
+    await heading("Gold One");
+    expect(screen.getByText("0 / 2")).toBeInTheDocument();
+    for (const b of screen.getAllByRole("checkbox")) expect(b).not.toBeChecked();
+
+    await userEvent.click(box("Trance"));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await heading("Gold Two");
+    const post = posts[0]!;
+    expect(LabelInputSchema.parse(post)).toEqual(post);
+    expect(post).toMatchObject({
+      kind: "track",
+      track_id: "g1",
+      pass: 1,
+      set: "gold",
+      category_ids: ["c4"],
+    });
+  });
+
+  it("opens on the gold set once songs and pairs are done, before the locked relabel", async () => {
+    stubServer(
+      withGold({
+        random: [{ ...track("t1", "First Song"), done: true }],
+        pairs: [
+          {
+            ...track("t9", "Pair Song"),
+            pair_id: "p001",
+            category_id: "c2",
+            done: true,
+          },
+        ],
+      }),
+    );
+    render(<LabelApp />);
+    await heading("Gold One");
+    expect(screen.getByRole("button", { name: "Gold set" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

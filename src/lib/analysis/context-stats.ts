@@ -58,6 +58,10 @@ interface Point {
     }
   >;
   jaccard: Contrast<N>;
+  // The loose rule: one run's top pick is still inside the other's top 3,
+  // averaged over both directions. It is the ceiling on what any rule built
+  // on a single run's top pick can certify.
+  top1_in_top3: Contrast<N>;
 }
 export interface Est {
   value: N;
@@ -107,7 +111,14 @@ interface TrackTerms {
     { delta: number[]; union: number[]; changed: number[] }
   >;
   jaccard: number[];
+  top1InTop3: number[];
 }
+
+const topK = (matches: Match[], k: number): string[] =>
+  [...matches]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((m) => m.category_id);
 
 function setStats(a: Set<string>, b: Set<string>) {
   let both = 0;
@@ -164,6 +175,15 @@ function trackTerms(byRun: Map<RunId, Match[]>, pairs: RunPair[]): TrackTerms {
       );
       return u === 0 ? 1 : (u - delta) / u;
     }),
+    top1InTop3: pairs.map(([a, b]) => {
+      const holds = (from: RunId, into: RunId) => {
+        const pick = topK(byRun.get(from)!, 1)[0];
+        return pick !== undefined && topK(byRun.get(into)!, 3).includes(pick)
+          ? 1
+          : 0;
+      };
+      return (holds(a, b) + holds(b, a)) / 2;
+    }),
   };
 }
 
@@ -202,9 +222,7 @@ function aggregate(
   const contrast = (perPair: (k: number) => N): Contrast<N> => {
     const noiseValue = perPair(0);
     const neighborValue = meanOf(
-      Array.from({ length: runPairs - 1 }, (_, i) =>
-        perPair(i + 1),
-      ),
+      Array.from({ length: runPairs - 1 }, (_, i) => perPair(i + 1)),
     );
     return {
       noise: noiseValue,
@@ -249,6 +267,12 @@ function aggregate(
     jaccard: contrast((k) =>
       ratio(
         sum((t) => t.jaccard[k]!),
+        tracks,
+      ),
+    ),
+    top1_in_top3: contrast((k) =>
+      ratio(
+        sum((t) => t.top1InTop3[k]!),
         tracks,
       ),
     ),

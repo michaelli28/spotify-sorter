@@ -5,7 +5,9 @@ import {
   PAIR_BINS,
   RANDOM_TRACKS,
   RELABEL_TRACKS,
+  GoldSampleSchema,
   SampleDesignSchema,
+  type GoldSample,
   type LabelSample,
   type PairBinId,
   type SampleDesign,
@@ -160,4 +162,37 @@ export function drawSample(input: DrawSampleInput): {
     })),
   });
   return { sample, design };
+}
+
+export interface DrawGoldSampleInput {
+  // Every track whose artist carries no genre tags.
+  no_genre_ids: readonly string[];
+  // Tracks already in the first sample: they get labeled there, not redrawn.
+  already_sampled: ReadonlySet<string>;
+  count: number;
+  seed: string;
+  created_at: string;
+}
+
+// A plain uniform draw: no score enters it, so there is nothing to reweight
+// and no design file. Sorted first, so the result doesn't depend on input order.
+export function drawGoldSample(input: DrawGoldSampleInput): GoldSample {
+  const pool = [...new Set(input.no_genre_ids)].sort(byCodeUnit);
+  const eligible = pool.filter((id) => !input.already_sampled.has(id));
+  if (eligible.length < input.count) {
+    throw new Error(
+      `need ${input.count} eligible no-genre tracks, got ${eligible.length}`,
+    );
+  }
+  const rand = seededRandom(input.seed);
+  return GoldSampleSchema.parse({
+    seed: input.seed,
+    created_at: input.created_at,
+    pool: {
+      no_genre: pool.length,
+      already_sampled: pool.length - eligible.length,
+      eligible: eligible.length,
+    },
+    track_ids: shuffled(eligible, rand).slice(0, input.count),
+  });
 }

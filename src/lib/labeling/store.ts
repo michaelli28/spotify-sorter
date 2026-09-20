@@ -1,11 +1,19 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import type { Cache } from "@/src/lib/cache";
 import { parseDefinitions, type CategoryDefinition } from "./definitions";
-import { definitionsPath, labelsDir, labelsPath, samplePath } from "./paths";
 import {
+  definitionsPath,
+  goldSamplePath,
+  labelsDir,
+  labelsPath,
+  samplePath,
+} from "./paths";
+import {
+  GoldSampleSchema,
   LabelRowSchema,
   LabelSampleSchema,
   RELABEL_DELAY_MS,
+  type GoldSample,
   type LabelRow,
   type LabelSample,
   type LabelState,
@@ -24,6 +32,12 @@ async function readOrNull(path: string): Promise<string | null> {
 export async function readSample(): Promise<LabelSample | null> {
   const raw = await readOrNull(samplePath());
   return raw === null ? null : LabelSampleSchema.parse(JSON.parse(raw));
+}
+
+// The gold set is a separate pre-registration and may not exist yet.
+export async function readGoldSample(): Promise<GoldSample | null> {
+  const raw = await readOrNull(goldSamplePath());
+  return raw === null ? null : GoldSampleSchema.parse(JSON.parse(raw));
 }
 
 export function readDefinitionsFile(): Promise<string | null> {
@@ -105,6 +119,7 @@ export function defineCategories(
 export function buildLabelState(
   input: Pick<Cache, "tracks" | "artists" | "categories"> & {
     sample: LabelSample;
+    gold?: GoldSample | null;
     definitions: string;
     definitionsSha: string;
     labels: readonly LabelRow[];
@@ -142,6 +157,10 @@ export function buildLabelState(
     definitions_sha256: input.definitionsSha,
     categories: defineCategories(input.definitions, categories),
     random: sample.random_track_ids.map((id) => ({
+      ...labelTrack(id),
+      done: pass1Done.has(id),
+    })),
+    gold: (input.gold?.track_ids ?? []).map((id) => ({
       ...labelTrack(id),
       done: pass1Done.has(id),
     })),

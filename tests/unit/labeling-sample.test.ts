@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { drawSample, type DrawSampleInput } from "@/src/lib/labeling/sample";
+import {
+  drawGoldSample,
+  drawSample,
+  type DrawSampleInput,
+} from "@/src/lib/labeling/sample";
 import { seededRandom, shuffled } from "@/src/lib/labeling/rng";
 import {
   LabelSampleSchema,
   PAIRS_PER_BIN,
   PAIR_BINS,
+  GoldSampleSchema,
   RANDOM_TRACKS,
   RELABEL_TRACKS,
   SampleDesignSchema,
@@ -195,5 +200,52 @@ describe("drawSample", () => {
     expect(() => drawSample(fixture({ tracks: RANDOM_TRACKS - 1 }))).toThrow(
       /tracks/,
     );
+  });
+});
+
+describe("drawGoldSample", () => {
+  const ids = Array.from(
+    { length: 500 },
+    (_, i) => `g${String(i).padStart(4, "0")}`,
+  );
+  const noGenre = ids.slice(0, 300);
+  const already = new Set(noGenre.slice(0, 40));
+  const input = {
+    no_genre_ids: noGenre,
+    already_sampled: already,
+    count: 100,
+    seed: "gold-seed",
+    created_at: "2026-09-19T12:00:00.000Z",
+  };
+
+  it("draws the asked-for count only from eligible no-genre tracks", () => {
+    const g = drawGoldSample(input);
+    expect(g.track_ids).toHaveLength(100);
+    expect(new Set(g.track_ids).size).toBe(100);
+    for (const id of g.track_ids) {
+      expect(noGenre).toContain(id);
+      expect(already.has(id)).toBe(false);
+    }
+    expect(g.pool).toEqual({
+      no_genre: 300,
+      already_sampled: 40,
+      eligible: 260,
+    });
+    expect(GoldSampleSchema.parse(g)).toEqual(g);
+  });
+
+  it("is deterministic in the seed and independent of input order", () => {
+    const a = drawGoldSample(input);
+    const b = drawGoldSample({
+      ...input,
+      no_genre_ids: [...noGenre].reverse(),
+    });
+    const other = drawGoldSample({ ...input, seed: "another" });
+    expect(b.track_ids).toEqual(a.track_ids);
+    expect(other.track_ids).not.toEqual(a.track_ids);
+  });
+
+  it("throws when the eligible pool is too small", () => {
+    expect(() => drawGoldSample({ ...input, count: 261 })).toThrow(/eligible/);
   });
 });

@@ -46,6 +46,7 @@ function table(title: string, c: ContrastStats): string {
       ];
     }),
     `| top-5 Jaccard | ${fmt(c.jaccard.noise)} | ${fmt(c.jaccard.neighbor)} | ${fmt(c.jaccard.neighbor_excess)} |`,
+    `| top pick inside other top 3 | ${fmt(c.top1_in_top3.noise)} | ${fmt(c.top1_in_top3.neighbor)} | ${fmt(c.top1_in_top3.neighbor_excess)} |`,
     "",
     `Score variance: noise ${fmt(v.noise, 2)}, cross ${fmt(v.cross, 2)}, neighbor ${fmt(v.neighbor, 2)}, neighbor share ${fmt(v.neighbor_share)}; dropout ${fmt(v.dropout_share)}.`,
   ];

@@ -37,6 +37,7 @@ type Load =
 const FINISHED: Record<Mode, string> = {
   songs: "Every song is labeled.",
   pairs: "Every pair is labeled.",
+  gold: "Every gold-set song is labeled.",
   relabel: "Every relabel is done.",
 };
 
@@ -174,8 +175,15 @@ export function LabelApp() {
       </Item>
     );
   } else {
-    const pass = mode === "songs" ? 1 : 2;
-    const track = (mode === "songs" ? state.random : state.relabel)[index]!;
+    const pass = mode === "relabel" ? 2 : 1;
+    const set = mode === "gold" ? "gold" : "random";
+    const track = (
+      mode === "gold"
+        ? state.gold
+        : mode === "relabel"
+          ? state.relabel
+          : state.random
+    )[index]!;
     const key = `${mode}:${track.track_id}`;
     body = (
       <Item itemKey={key}>
@@ -197,6 +205,7 @@ export function LabelApp() {
                 kind: "track",
                 track_id: track.track_id,
                 pass,
+                set,
                 // Cache order, so a row never records the shuffled display order.
                 category_ids: state.categories
                   .map((c) => c.id)

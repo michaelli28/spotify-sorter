@@ -29,6 +29,29 @@ const C: RunMatches = {
 };
 const base = { trackIds: ["t1", "t2"], categories: 4, seed: "boot" };
 
+describe("top1_in_top3 when the top pick moves out of the other run's top 3", () => {
+  const steady: RunMatches = {
+    t9: m(["c1", 90], ["c2", 80], ["c3", 70], ["c4", 60]),
+  };
+  const moved: RunMatches = {
+    t9: m(["c4", 90], ["c5", 80], ["c6", 70], ["c1", 10]),
+  };
+  const s = contextStats({
+    trackIds: ["t9"],
+    categories: 6,
+    seed: "boot",
+    runs: { A1: steady, A2: steady, B: moved, C: steady },
+  });
+
+  it("scores each direction and averages the cross pairs", () => {
+    // A1 top1 c1 is not in moved's top 3 {c4,c5,c6}; moved's top1 c4 is not in
+    // {c1,c2,c3}: both directions 0. Pairs A1B, A2B, BC are 0; A1C, A2C are 1.
+    expect(s.main.top1_in_top3.noise.value).toBe(1);
+    expect(s.main.top1_in_top3.neighbor.value).toBeCloseTo(0.4, 12);
+    expect(s.main.top1_in_top3.neighbor_excess.value).toBeCloseTo(-0.6, 12);
+  });
+});
+
 describe("contextStats on a hand-computed 2-track fixture", () => {
   const s = contextStats({ ...base, runs: { A1, A2, B, C } });
 
@@ -60,6 +83,14 @@ describe("contextStats on a hand-computed 2-track fixture", () => {
     expect(s.main.flips.top1.flip_share.neighbor.value).toBe(0);
     // t2 top2: {c3,c4} vs B's {c3,c1}: 2 flips over 2 + 3 placements.
     expect(s.main.flips.top2.flip_share.neighbor.value).toBeCloseTo(6 / 25, 12);
+  });
+
+  it("holds under the loose rule: the top pick stays inside the other run's top 3", () => {
+    // Every track here has at most 2 matches, so each run's top 3 is its whole
+    // top 5: the loose rule can never fail on this fixture.
+    expect(s.main.top1_in_top3.noise.value).toBe(1);
+    expect(s.main.top1_in_top3.neighbor.value).toBe(1);
+    expect(s.main.top1_in_top3.neighbor_excess.value).toBe(0);
   });
 
   it("compares top-5 sets by Jaccard", () => {
