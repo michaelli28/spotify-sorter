@@ -442,11 +442,27 @@ def main() -> None:
         elif top[0] == ci:
             log("  Matches the card's index — no off-by-one in the hidden-state axis.")
         else:
-            log(
-                f"  Card says {ci}. A best at {ci-1} or {ci+1} would mean the hidden_states "
-                "axis is offset by one; anything further is a genuine disagreement with the "
-                "card, not indexing."
+            # An argmax over 24 layers is only meaningful if the curve has a peak.
+            # On this task layers 7-23 sit inside ~0.005 val AUROC, so the winner is
+            # decided by seed noise, and reporting it as a disagreement with the card
+            # would be reading structure into a flat line.
+            gap = results[top[0]]["val_auroc"] - results[ci]["val_auroc"]
+            spread = max(r["val_auroc"] for r in results.values()) - min(
+                r["val_auroc"] for r in results.values()
             )
+            if gap < 0.01:
+                log(
+                    f"  Card says {ci}, which trails the best by only {gap:.4f} val AUROC "
+                    f"(whole-curve spread {spread:.4f}). One seed cannot separate those, so "
+                    "this is a flat curve, NOT a disagreement with the card and not an "
+                    "off-by-one — the layer choice barely matters on this task."
+                )
+            else:
+                log(
+                    f"  Card says {ci}; the best beats it by {gap:.4f} val AUROC. A best at "
+                    f"{ci-1} or {ci+1} would suggest the hidden_states axis is offset by one; "
+                    "further away is a real disagreement with the card."
+                )
 
     log(f"\ntotal {(time.time()-t0)/60:.1f} min on {dev}")
 
