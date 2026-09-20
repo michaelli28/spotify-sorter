@@ -1,0 +1,8 @@
+# Everything this pipeline produces: ISRC maps, embeddings, checkpoints, models.
+# Embeddings are large and derived; they are reproducible from the scripts plus
+# data/cache.json, and their sha256 is recorded in the notes ledger instead.
+artifacts/
+venv/
+models/
+__pycache__/
+*.pyc
