@@ -26,6 +26,8 @@ import json
 import statistics
 from pathlib import Path
 
+import gold_set
+
 ML = Path(__file__).resolve().parent
 ART = ML / "artifacts"
 DATA = ML.parent / "data"
@@ -47,9 +49,7 @@ def main() -> None:
         for t in library
         if not cache["artists"].get(cache["tracks"][t]["artist_id"], {}).get("genres")
     }
-    gold = set(json.loads((DATA / "labels" / "gold-sample.json").read_text())["track_ids"])
-    sample = json.loads((DATA / "labels" / "sample.json").read_text())
-    gold |= {t for t in sample["random_track_ids"] if t in no_genre}
+    gold = set(gold_set.load().track_ids)
 
     plays: collections.Counter = collections.Counter()
     ms: collections.Counter = collections.Counter()

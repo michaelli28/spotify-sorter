@@ -150,7 +150,7 @@ def run_fold(
     epochs: int,
     lr: float,
     wd: float,
-) -> tuple[dict[str, float], dict[str, list[float]], dict[str, float]]:
+) -> tuple[dict[str, float], dict[str, list[float]], dict[str, float], np.ndarray]:
     """Train once at a given weight decay. Caller sweeps wd on the inner split.
 
     Regularisation is the whole game here, not a detail. 41 categories, ~1,750
@@ -226,7 +226,12 @@ def run_fold(
     with torch.no_grad():
         te_scores = model(xs_te)[0]
         tr_scores = model(xs_tr)[0]
-    return metrics(te_scores, y_te), model.layer_weights(), metrics(tr_scores, y_tr)
+    return (
+        metrics(te_scores, y_te),
+        model.layer_weights(),
+        metrics(tr_scores, y_tr),
+        te_scores.detach().cpu().numpy(),
+    )
 
 
 def baselines(ds: Dataset, folds: np.ndarray) -> dict[str, dict[str, float]]:
@@ -254,6 +259,12 @@ def main() -> None:
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--only", default="", help="comma-separated config names")
     ap.add_argument("--out", default="cv-results.json")
+    ap.add_argument(
+        "--oof-out",
+        default="",
+        help="also write OUT-OF-FOLD scores here (npz). Every row is scored by the "
+        "fold that never saw its artist, which is what gold-set scoring needs.",
+    )
     args = ap.parse_args()
 
     device = args.device
@@ -288,9 +299,11 @@ def main() -> None:
         CONFIGS = {k: v for k, v in CONFIGS.items() if k in want}
 
     results: dict[str, dict] = {}
+    oof_blocks: dict[str, np.ndarray] = {}
     for name, blocks in CONFIGS.items():
         t0 = time.time()
         per_fold, weights, train_m, chosen_wd = [], [], [], []
+        oof = np.full((len(ds.isrc), N_CAT), np.nan, dtype=np.float32)
         for f in range(args.folds):
             te = np.where(folds == f)[0]
             rest = np.where(folds != f)[0]
@@ -302,16 +315,17 @@ def main() -> None:
             # exactly once, after wd is fixed, so no hyperparameter ever saw it.
             best_wd, best_val, chosen = None, -1.0, None
             for wd in WD_GRID:
-                mv, wv, tmv = run_fold(
+                mv, wv, tmv, _ = run_fold(
                     ds, blocks, tr, va, va, device, args.hidden, args.aux,
                     args.epochs, lr=3e-3, wd=wd,
                 )
                 if mv["top1_agree"] > best_val:
                     best_val, best_wd = mv["top1_agree"], wd
-            m, w, tm = run_fold(
+            m, w, tm, te_scores = run_fold(
                 ds, blocks, tr, va, te, device, args.hidden, args.aux,
                 args.epochs, lr=3e-3, wd=best_wd,
             )
+            oof[te] = te_scores
             chosen_wd.append(best_wd)
             per_fold.append(m)
             train_m.append(tm)
@@ -329,6 +343,13 @@ def main() -> None:
             "weight_decay_per_fold": chosen_wd,
             "seconds": round(time.time() - t0, 1),
         }
+        if args.oof_out:
+            if np.isnan(oof).any():
+                raise SystemExit(
+                    f"{int(np.isnan(oof).any(1).sum())} rows never landed in a test fold — "
+                    "out-of-fold scores would be incomplete."
+                )
+            oof_blocks[name] = oof
         a = agg["top1_agree"]
         b = agg["top1_in_top3"]
         print(
@@ -353,6 +374,17 @@ def main() -> None:
     }
     (ART / args.out).write_text(json.dumps(payload, indent=2))
     print(f"\nwrote {ART / args.out}")
+
+    if args.oof_out:
+        np.savez_compressed(
+            ART / args.oof_out,
+            isrc=ds.isrc,
+            folds=folds,
+            categories=np.array(ds.categories),
+            **{f"scores__{k}": v for k, v in oof_blocks.items()},
+        )
+        print(f"wrote {ART / args.oof_out} ({len(oof_blocks)} config(s), "
+              f"{len(ds.isrc)} rows x {N_CAT} categories)")
 
 
 if __name__ == "__main__":
