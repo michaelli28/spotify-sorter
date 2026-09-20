@@ -121,6 +121,22 @@ def main() -> None:
     path = ART / "streaming-history.json"
     path.write_text(json.dumps(out, indent=2))
     print(f"\nwrote {path}")
+
+    # GOLD-PROTOCOL.md section 8: the third axis needs PER-TRACK counts, not the
+    # aggregates above. Written from this parse rather than a second one, so
+    # there is exactly one place that reads the export.
+    per = ART / "streaming-per-track.json"
+    per.write_text(
+        json.dumps(
+            {
+                t: {"plays": plays[t], "ms": ms[t], "skips": skips[t]}
+                for t in sorted(library)
+                if plays[t]
+            },
+            indent=2,
+        )
+    )
+    print(f"wrote {per} ({sum(1 for t in library if plays[t])} played library tracks)")
     print(
         "\nNOT USED as a label or a feature anywhere. Play counts are revealed\n"
         "preference, not category membership, and mixing them into the blind-label\n"

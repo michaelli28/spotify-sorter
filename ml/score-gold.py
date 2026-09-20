@@ -317,6 +317,107 @@ def global_prior_scores(g: gold_set.GoldSet, n: int) -> np.ndarray:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# section 8 — revealed preference (non-blind, secondary, never the headline)
+# --------------------------------------------------------------------------
+
+
+def load_per_track() -> dict:
+    p = ART / "streaming-per-track.json"
+    if not p.exists():
+        raise SystemExit(
+            f"{p} missing. Run `venv/bin/python streaming-history.py` first — it needs the "
+            "Extended Streaming History export in ~/Downloads."
+        )
+    return json.loads(p.read_text())
+
+
+def eta_squared(vals: np.ndarray, groups: np.ndarray, k: int) -> float:
+    """Between-category share of total variance. 0 means the categories say
+    nothing about the measure; 1 means the measure is constant within each."""
+    mu = vals.mean()
+    ss_tot = float(((vals - mu) ** 2).sum())
+    if ss_tot == 0.0:
+        return 0.0
+    cnt = np.bincount(groups, minlength=k).astype(np.float64)
+    sums = np.bincount(groups, weights=vals, minlength=k)
+    nz = cnt > 0
+    means = np.zeros(k)
+    means[nz] = sums[nz] / cnt[nz]
+    return float((cnt * (means - mu) ** 2).sum() / ss_tot)
+
+
+def permutation_eta(vals, groups, k, resamples, seed):
+    """Null: shuffle the category assignment across songs, preserving category
+    sizes. That is the right null here — it asks whether THESE categories carry
+    listening structure, holding how many songs each one got."""
+    obs = eta_squared(vals, groups, k)
+    rng = np.random.default_rng(seed)
+    g = groups.copy()
+    null = np.empty(resamples)
+    for b in range(resamples):
+        rng.shuffle(g)
+        null[b] = eta_squared(vals, g, k)
+    p = (1 + int((null >= obs).sum())) / (resamples + 1)
+    return obs, float(np.percentile(null, 95)), p
+
+
+def streaming_axis(g, ids, orders, cfg):
+    """GOLD-PROTOCOL.md section 8. Reported with its four caveats, every time."""
+    per = load_per_track()
+    k = len(g.cat_ids)
+    res = cfg["bootstrap"]["resamples"]
+    seed = cfg["bootstrap"]["seed"]
+
+    played = [i for i, t in enumerate(ids) if t in per]
+    skippable = [i for i in played if per[ids[i]]["plays"] >= 5]
+    log(f"\n=== section 8: revealed preference (NON-BLIND, secondary) ===")
+    log(f"  {len(played)}/{len(ids)} scored songs appear in the export; "
+        f"{len(skippable)} have the >=5 plays a skip rate needs")
+    if len(played) < 20:
+        log("  too few played songs to say anything — skipping")
+        return []
+
+    measures = {
+        "log1p(plays)": (
+            played,
+            np.log1p(np.array([per[ids[i]]["plays"] for i in played], dtype=np.float64)),
+        ),
+        "skip rate": (
+            skippable,
+            np.array(
+                [per[ids[i]]["skips"] / per[ids[i]]["plays"] for i in skippable],
+                dtype=np.float64,
+            ),
+        ),
+    }
+
+    rows = []
+    for mname, (idx, vals) in measures.items():
+        if len(idx) < 20:
+            log(f"  {mname}: only {len(idx)} songs qualify — skipped")
+            continue
+        log(f"\n  {mname}  (n={len(idx)})")
+        log(f"    {'model':24s} {'eta^2':>7} {'null p95':>9} {'p':>7}")
+        for name, order in orders:
+            groups = order[idx, 0].astype(np.int64)
+            obs, p95, pval = permutation_eta(vals, groups, k, res, seed)
+            flag = "" if pval < 0.05 else "   (not distinguishable from chance)"
+            log(f"    {name:24s} {obs:7.4f} {p95:9.4f} {pval:7.4f}{flag}")
+            rows.append({"measure": mname, "model": name, "n": len(idx),
+                         "eta2": obs, "null_p95": p95, "p": pval})
+
+    log("\n  Caveats, and they travel with this number wherever it is quoted:")
+    log("   - NOT blind. This is Michael's own listening, not a held-out judgement.")
+    log("   - Descriptive, not a truth test. Categories can track listening without")
+    log("     being the right mood scheme, and the right scheme need not track listening.")
+    log(f"   - Confounded by artist: {len(set(g.artist_of[t] for t in ids))} artists over "
+        f"{len(ids)} songs, and play counts cluster hard by artist.")
+    log("   - Cannot move the headline. If this and the blind-label result disagree, that")
+    log("     is reported as a disagreement, not resolved in favour of the nicer one.")
+    return rows
+
+
 def report(name: str, order, truth, artists, cfg, baseline_d=None):
     row = {"model": name}
     for key, fn in METRICS.items():
@@ -382,20 +483,26 @@ def main() -> None:
     isrc_rows = {s: i for i, s in enumerate(z["isrc"].tolist())}
     rows = np.array([isrc_rows[g.isrc_of[t]] for t in ids])
 
+    orders = [("claude", claude_order)]
     table = [report("claude", claude_order, truth, artists, cfg)]
     for label, key in (("student (audio)", a.config), ("text-only (CLAP text)", a.text_config)):
         k = f"scores__{key}"
         if k not in z:
             log(f"  ! {label}: '{key}' not in {a.oof} — run train.py --only \"{key}\" --oof-out")
             continue
-        table.append(report(label, rank_from_scores(z[k][rows]), truth, artists, cfg, base_d))
+        o = rank_from_scores(z[k][rows])
+        orders.append((label, o))
+        table.append(report(label, o, truth, artists, cfg, base_d))
 
     aa, defined = artist_average_scores(g, ids)
-    table.append(report("artist-average", rank_from_scores(aa), truth, artists, cfg, base_d))
+    aa_order = rank_from_scores(aa)
+    orders.append(("artist-average", aa_order))
+    table.append(report("artist-average", aa_order, truth, artists, cfg, base_d))
     log(f"  artist-average defined for {int(defined.sum())}/{len(ids)} songs "
         f"(rest fall back to the global prior)")
-    table.append(report("global prior", rank_from_scores(global_prior_scores(g, len(ids))),
-                        truth, artists, cfg, base_d))
+    prior_order = rank_from_scores(global_prior_scores(g, len(ids)))
+    orders.append(("global prior", prior_order))
+    table.append(report("global prior", prior_order, truth, artists, cfg, base_d))
 
     log(f"\n{'model':24s} {'top1':>7} {'p@3':>7} {'rec@k':>7}   paired Δ vs claude "
         f"[{cfg['primary_metric']}]")
@@ -422,8 +529,11 @@ def main() -> None:
         log(f"your own self-agreement (pass 1 vs pass 2, n={len(both)}): "
             f"{same/len(both)*100:.1f}% identical sets")
 
+    streaming = streaming_axis(g, ids, orders, cfg) if cfg.get("streaming_axis") else []
+
     payload = {
         "config": cfg,
+        "streaming_axis": streaming,
         "gold": {"n": len(g.track_ids), "eligible": len(g.eligible), "excluded": g.excluded},
         "denominator": {"primary": len(ids), "itt": len(itt_ids),
                         "artists": len(set(artists))},
@@ -481,6 +591,24 @@ def self_test() -> None:
     st = np.arange(20, dtype=float).reshape(4, 5)
     assert volume_matched_threshold(st, 2.0) == 12.0, volume_matched_threshold(st, 2.0)
     log("volume-matched threshold          OK")
+
+    # --- section 8 statistic, hand-checked ---
+    # perfect separation: mu=3, ss_tot=16, ss_between=2*(1-3)^2+2*(5-3)^2=16 -> 1.0
+    assert eta_squared(np.array([1.0, 1, 5, 5]), np.array([0, 0, 1, 1]), 2) == 1.0
+    # same spread inside both groups: both group means are 3 -> ss_between=0 -> 0.0
+    assert eta_squared(np.array([1.0, 5, 1, 5]), np.array([0, 0, 1, 1]), 2) == 0.0
+    # a constant measure has no variance to apportion
+    assert eta_squared(np.array([2.0, 2, 2, 2]), np.array([0, 0, 1, 1]), 2) == 0.0
+    log("eta^2 hand arithmetic             OK")
+
+    vals = np.array([1.0] * 10 + [9.0] * 10)
+    sep = np.array([0] * 10 + [1] * 10)
+    obs, p95, pv = permutation_eta(vals, sep, 2, 500, 1)
+    assert obs == 1.0 and pv < 0.01, (obs, pv)
+    mixed = np.array([0, 1] * 10)
+    obs2, _, pv2 = permutation_eta(vals, mixed, 2, 500, 1)
+    assert obs2 < 0.01 and pv2 > 0.5, (obs2, pv2)
+    log(f"permutation null separates        OK  (p={pv:.4f} vs {pv2:.3f})")
 
     g = gold_set.load()
     assert len(g.track_ids) == 251 and len(g.eligible) == 242, (len(g.track_ids), len(g.eligible))

@@ -124,20 +124,54 @@ tighter, and grouping by artist widens it again. Both are reported.
 
 ---
 
-## Open questions for you — the only things I would not decide alone
+## Decisions taken 2026-09-20, before any label was scored
 
-**Q1. Is top-1 hit rate the right headline?** The alternative is precision@3, which is
-closer to how playlists actually get used but needs no threshold either. I recommend top-1
-as primary with precision@3 always reported beside it.
+All three were answered by Michael on 2026-09-20 and frozen into `ml/gold-config.json`
+together with this file's sha256. The scorer refuses to run without that file, and refuses
+again if this file changes after it. No label had been read by any scoring code when these
+were chosen, and no score had been computed.
 
-**Q2. Empty tick sets — include in the primary?** I recommend including them (they are a
-real outcome and excluding them would flatter both models), but they add denominator
-without adding discriminating power. If many gold songs come back empty, this matters, and
-we will not know until you label.
+| | question | decision |
+| --- | --- | --- |
+| **Q1** | headline metric | **top-1 hit rate**, with precision@3 always reported beside it |
+| **Q2** | empty tick sets ("fits none") | **excluded** from the primary denominator, counted and reported separately |
+| **Q3** | streaming history as a third axis | **yes** — specified in §8 below |
 
-**Q3. The streaming history opens a third evaluation axis.** Your export covers 94.8% of
-the gold set with real play counts and skip rates. That is your revealed preference,
-independent of both Claude and the audio, so it could serve as a _non-blind_ sanity check
-("do the student's categories group songs you actually play together?"). I have NOT built
-this and would not without your say-so — it is a different claim from the blind-label one
-and could muddy it. Flagging it as available, not proposing it for the headline.
+Q2 note: excluding empty sets keeps the denominator to songs that can discriminate between
+the two models. The count of empty sets is reported every time the headline is quoted, and
+the primary is also recomputed WITH them included as a robustness line, so the choice is
+visible rather than load-bearing.
+
+## 8. Third axis — revealed preference (non-blind, secondary, never the headline)
+
+Claude and the student are both judged against Michael's blind labels. The streaming export
+is a different kind of evidence: what he actually played, independent of both. It answers a
+narrower question — **do a model's categories group songs that get listened to alike?**
+
+**Data.** Per-track play count, total ms played and skip count from the Extended Streaming
+History export, via `ml/streaming-history.py --per-track-out`. 238 of the 251 gold songs
+appear in the export (94.8%); the remaining 13 are excluded from this axis only, and that
+count is reported with the result.
+
+**Statistic.** For a model's top-1 category assignment over the gold songs, the
+between-category share of variance (η²) of two listening measures:
+
+1. `log1p(play count)`
+2. skip rate (`skips / plays`), computed only for tracks with at least 5 plays, since a
+   skip rate over 2 plays is noise
+
+**Null.** Permute the category assignment across songs 10,000 times, preserving category
+sizes, seed recorded. Report the observed η², the null distribution's 95th percentile, and
+the permutation p-value. Computed identically for Claude, the student, text-only,
+artist-average and the global prior — comparability across models is the entire point.
+
+**What this is not.** Four caveats, reported every time this axis is quoted:
+
+- It is **not blind**. Michael's listening is his own behaviour, not a held-out judgement.
+- It is **descriptive, not a truth test**. A category scheme can track listening without
+  being the right mood scheme, and vice versa.
+- It is **confounded by artist** — 193 artists across 251 songs, and play counts cluster
+  hard by artist, so some of any η² is artist identity rather than category structure.
+- It **cannot move the headline**. The claim remains the blind-label top-1 comparison in
+  §2. If this axis and the headline disagree, that is reported as a disagreement, not
+  resolved in favour of whichever is nicer.

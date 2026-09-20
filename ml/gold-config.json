@@ -1,0 +1,13 @@
+{
+  "frozen_at": "2026-09-20T22:49:56+00:00",
+  "protocol_sha256": "c1c6f26af5f164d90c16de1ff54561d263b46ccc315c3aa5da860c618dc9d2d3",
+  "primary_metric": "top1",
+  "include_empty_sets": false,
+  "streaming_axis": true,
+  "bootstrap": {
+    "unit": "artist",
+    "resamples": 10000,
+    "seed": 20260920,
+    "interval": "percentile 2.5/97.5"
+  }
+}
