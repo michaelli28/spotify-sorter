@@ -75,21 +75,36 @@ def download_part(part: str, expect: str) -> Path:
     if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() == expect:
         return dest
     url = f"{CDN}/{name}"
-    log(f"  downloading {name} …")
-    h = hashlib.sha256()
     tmp = dest.with_suffix(".part")
-    with requests.get(url, stream=True, timeout=300) as r:
-        r.raise_for_status()
-        with tmp.open("wb") as fh:
-            for block in r.iter_content(1 << 20):
-                fh.write(block)
-                h.update(block)
-    got = h.hexdigest()
-    if got != expect:
-        tmp.unlink(missing_ok=True)
-        raise SystemExit(f"sha256 mismatch for {name}: {got[:12]} != {expect[:12]}")
-    tmp.replace(dest)
-    return dest
+    # A 10-hour run died at part 97/100 on a single ChunkedEncodingError
+    # ("Connection broken: IncompleteRead"). One flaky 500 MB transfer should
+    # cost one retry, not the rest of the sweep. The sha check below is what
+    # makes a retry safe: a truncated body can never be mistaken for a good one.
+    last = None
+    for attempt in range(1, 5):
+        log(f"  downloading {name} …" + (f" (attempt {attempt})" if attempt > 1 else ""))
+        h = hashlib.sha256()
+        try:
+            with requests.get(url, stream=True, timeout=300) as r:
+                r.raise_for_status()
+                with tmp.open("wb") as fh:
+                    for block in r.iter_content(1 << 20):
+                        fh.write(block)
+                        h.update(block)
+        except requests.RequestException as e:
+            last = e
+            log(f"    transfer failed: {type(e).__name__}: {e}")
+            time.sleep(5 * attempt)
+            continue
+        got = h.hexdigest()
+        if got == expect:
+            tmp.replace(dest)
+            return dest
+        last = f"sha256 mismatch: {got[:12]} != {expect[:12]}"
+        log(f"    {last}")
+        time.sleep(5 * attempt)
+    tmp.unlink(missing_ok=True)
+    raise SystemExit(f"{name} failed after 4 attempts: {last}")
 
 
 def decode(data: bytes) -> np.ndarray:
