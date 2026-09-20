@@ -32,6 +32,7 @@ uv pip install --python "$PY" \
   "torchaudio==2.8.0" \
   "transformers==4.47.1" \
   "essentia-tensorflow==2.1b6.dev1389" \
+  "scikit-learn<1.7" \
   "soundfile" \
   "requests" \
   "tqdm"
