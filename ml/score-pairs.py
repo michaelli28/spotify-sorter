@@ -35,6 +35,12 @@ BOOTSTRAP_SEED = 20260921
 # Below this many blind pairs there is nothing to estimate: one pair reports
 # 100% with no interval, which reads like a finding and is not one.
 MIN_BLIND = 10
+# ...and the same floor has to apply to EVERY number printed, not once to the
+# total. A global floor lets six bins of n=1 print "100% [nan, nan]" the moment
+# the total clears 10 — the exact failure this constant exists to prevent, only
+# now wearing the calibration label. Distinct TRACKS, not pairs, because the
+# interval is resampled by track.
+MIN_PER_NUMBER_TRACKS = 8
 # Display order, low to high. "not_top5" is the model's implicit "no".
 BIN_ORDER = [
     "not_top5", "lt55", "55-64", "65-69", "70-74", "75-79", "80-84", "85plus",
@@ -74,6 +80,10 @@ def ipw_rate(rows: list[dict]) -> float:
     return float((w * y).sum() / w.sum()) if w.sum() else float("nan")
 
 
+def n_tracks(rows: list[dict]) -> int:
+    return len({r["track_id"] for r in rows})
+
+
 def bootstrap_rate(rows: list[dict], resamples: int, seed: int) -> tuple[float, float]:
     """Resampled by TRACK, not by pair: several pairs can share a song, and
     treating them as independent would narrow the interval by pretending there
@@ -84,6 +94,10 @@ def bootstrap_rate(rows: list[dict], resamples: int, seed: int) -> tuple[float, 
     keys = sorted(by_track)
     if len(keys) < 2:
         return float("nan"), float("nan")
+    # A zero-width interval is not a 95% interval, it is 0% coverage. It happens
+    # whenever every resample lands on the same value (all-yes, all-no, or one
+    # track), and printing it as "[100.0, 100.0]" is the most confident-looking
+    # output this script can produce from the least evidence.
     groups = [by_track[k] for k in keys]
     rng = np.random.default_rng(seed)
     out = np.empty(resamples)
@@ -91,7 +105,19 @@ def bootstrap_rate(rows: list[dict], resamples: int, seed: int) -> tuple[float, 
         pick = rng.integers(0, len(keys), len(keys))
         drawn = [r for p in pick for r in groups[p]]
         out[b] = ipw_rate(drawn)
-    return float(np.nanpercentile(out, 2.5)), float(np.nanpercentile(out, 97.5))
+    lo = float(np.nanpercentile(out, 2.5))
+    hi = float(np.nanpercentile(out, 97.5))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi - lo < 1e-12:
+        return float("nan"), float("nan")
+    return lo, hi
+
+
+def fmt_ci(lo: float, hi: float) -> str:
+    """NaN endpoints mean the bootstrap had nothing to resample. Say that
+    instead of rendering nan as if it were a bound."""
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return f"{'no interval':>16}"
+    return f"[{lo*100:>6.1f},{hi*100:>6.1f}]"
 
 
 def main() -> None:
@@ -144,32 +170,73 @@ def main() -> None:
     for r in use:
         per_bin[r["bin_id"]].append(r)
     table = []
+    thin: list[str] = []
     for b in BIN_ORDER:
         rs = per_bin.get(b, [])
         if not rs:
             log(f"{b:>9}  {0:>3}  {bins[b]['population_pairs']:>9,}  {'—':>9}")
             continue
+        nt = n_tracks(rs)
+        if nt < MIN_PER_NUMBER_TRACKS:
+            thin.append(b)
+            log(f"{b:>9}  {len(rs):>3}  {bins[b]['population_pairs']:>9,}  "
+                f"{'—':>9}  {f'only {nt} track(s)':>16}")
+            table.append({"bin": b, "n": len(rs), "n_tracks": nt,
+                          "population_pairs": bins[b]["population_pairs"],
+                          "precision": None, "ci95": None, "too_thin": True})
+            continue
         rate = ipw_rate(rs)
         lo, hi = bootstrap_rate(rs, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED)
         log(f"{b:>9}  {len(rs):>3}  {bins[b]['population_pairs']:>9,}  "
-            f"{rate*100:>8.1f}%  [{lo*100:>6.1f},{hi*100:>6.1f}]")
-        table.append({"bin": b, "n": len(rs), "population_pairs": bins[b]["population_pairs"],
-                      "precision": rate, "ci95": [lo, hi]})
+            f"{rate*100:>8.1f}%  {fmt_ci(lo, hi)}")
+        table.append({"bin": b, "n": len(rs), "n_tracks": nt,
+                      "population_pairs": bins[b]["population_pairs"],
+                      "precision": rate, "ci95": [lo, hi], "too_thin": False})
+    if thin:
+        log(f"  ({len(thin)} bin(s) too thin to estimate: {', '.join(thin)})")
 
     # The number the app's behaviour actually rests on.
     above = [r for r in use if r["bin_id"] in ABOVE_THRESHOLD]
-    if above:
+    present = {r["bin_id"] for r in above}
+    missing = sorted(ABOVE_THRESHOLD - present)
+    # ipw_rate self-normalises, so its denominator tracks the strata actually
+    # present. Printing the full 10,565 beside it would claim coverage the
+    # estimate does not have — and the bin most likely to be missing early is
+    # 65-69, the one sitting on the threshold and the likeliest to be weakest.
+    covered = sum(bins[b]["population_pairs"] for b in present)
+    agg = None
+    if above and n_tracks(above) >= MIN_PER_NUMBER_TRACKS and not missing:
         rate = ipw_rate(above)
         lo, hi = bootstrap_rate(above, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED)
         log(f"\nprecision at the app's live rule (score >= 65), IPW over "
-            f"{sum(bins[b]['population_pairs'] for b in ABOVE_THRESHOLD):,} population pairs:")
-        log(f"  {rate*100:.1f}%  [{lo*100:.1f}, {hi*100:.1f}]   n={len(above)}"
+            f"{covered:,} population pairs:")
+        log(f"  {rate*100:.1f}%  {fmt_ci(lo, hi)}   n={len(above)}"
             + ("" if is_calibration else "   [ASSISTED — the score read back, not calibration]"))
+        agg = {"precision": rate, "ci95": [lo, hi], "n": len(above),
+               "population_covered": covered}
+    elif above:
+        why = (f"{len(missing)} of the 5 bands have no data ({', '.join(missing)})"
+               if missing else f"only {n_tracks(above)} distinct track(s)")
+        log(f"\nprecision at the app's live rule (score >= 65): NOT REPORTED — {why}.")
+        log(f"  The estimand is precision over all {sum(bins[b]['population_pairs'] for b in ABOVE_THRESHOLD):,}"
+            f" pairs above the cut; these rows cover {covered:,}, so an aggregate here")
+        log("  would be a different quantity wearing the headline's name.")
+        agg = {"precision": None, "reason": why, "population_covered": covered,
+               "missing_bins": missing, "n": len(above)}
 
-    # Monotonicity: calibration's one falsifiable shape claim.
-    seen = [(b, ipw_rate(per_bin[b])) for b in BIN_ORDER if per_bin.get(b)]
-    drops = [(a[0], c[0]) for a, c in zip(seen, seen[1:]) if c[1] < a[1] - 1e-9]
-    log(f"\nmonotonic across bins: {'yes' if not drops else 'NO — ' + ', '.join(f'{x}>{y}' for x, y in drops)}")
+    # Monotonicity: calibration's one falsifiable shape claim. Only over bins
+    # that actually produced an estimate — "monotonic: yes" across one bin says
+    # nothing and reads like it says something.
+    estimable = [b for b in BIN_ORDER
+                 if per_bin.get(b) and n_tracks(per_bin[b]) >= MIN_PER_NUMBER_TRACKS]
+    if len(estimable) < 2:
+        log(f"\nmonotonic across bins: not testable ({len(estimable)} estimable bin(s))")
+        drops = []
+    else:
+        seen = [(b, ipw_rate(per_bin[b])) for b in estimable]
+        drops = [(a[0], c[0]) for a, c in zip(seen, seen[1:]) if c[1] < a[1] - 1e-9]
+        log(f"\nmonotonic across {len(estimable)} estimable bins: "
+            f"{'yes' if not drops else 'NO — ' + ', '.join(f'{x}>{y}' for x, y in drops)}")
     if is_calibration and drops:
         log("  A higher score band scoring worse than a lower one is the interesting\n"
             "  failure here — it means the score is not ordering what it claims to.")
@@ -181,6 +248,8 @@ def main() -> None:
         "bootstrap": {"unit": "track", "resamples": BOOTSTRAP_RESAMPLES,
                       "seed": BOOTSTRAP_SEED},
         "bins": table,
+        "above_threshold": agg,
+        "min_tracks_per_number": MIN_PER_NUMBER_TRACKS,
     }
     (ART / "pair-calibration.json").write_text(json.dumps(out, indent=2))
     log(f"\nwrote {ART / 'pair-calibration.json'}")
@@ -212,6 +281,23 @@ def self_test() -> None:
     assert np.isnan(lo_s), "one track = one group = no resampling signal"
     assert hi_d > lo_d, (lo_d, hi_d)
     log(f"track grouping respected          OK  (20 pairs on 1 track -> no CI)")
+
+    # A degenerate resample distribution must not surface as a tight interval.
+    allyes = [{"answer": "yes", "inclusion_prob": 0.5, "track_id": f"t{i}"}
+              for i in range(12)]
+    lo, hi = bootstrap_rate(allyes, 500, 1)
+    assert np.isnan(lo) and np.isnan(hi), (lo, hi)
+    assert fmt_ci(lo, hi).strip() == "no interval"
+    log("zero-width interval refused       OK  (all-yes -> 'no interval', not [100,100])")
+
+    mixed = [{"answer": "yes" if i % 3 else "no", "inclusion_prob": 0.5,
+              "track_id": f"t{i}"} for i in range(12)]
+    lo2, hi2 = bootstrap_rate(mixed, 2000, 1)
+    assert np.isfinite(lo2) and hi2 > lo2, (lo2, hi2)
+    log(f"a real interval still prints      OK  ([{lo2*100:.1f}, {hi2*100:.1f}])")
+
+    assert n_tracks(mixed) == 12 and n_tracks(allyes[:3] + allyes[:3]) == 3
+    log("n_tracks counts distinct tracks    OK")
     log("\nall self-tests passed")
 
 

@@ -43,6 +43,11 @@ CONFIG = ML / "gold-config.json"
 
 BOOTSTRAP_RESAMPLES = 10_000
 BOOTSTRAP_SEED = 20260920
+# A headline needs enough blind rows to mean anything, and enough distinct
+# ARTISTS because that is the resampling unit — one song yields a paired
+# difference of exactly -1, 0 or +1 and a CI whose endpoints are equal.
+MIN_BLIND_SONGS = 20
+MIN_BLIND_ARTISTS = 10
 LIVE_SCORE_THRESHOLD = 65  # the app's actual rule, §3.3
 
 
@@ -125,7 +130,9 @@ class Labels:
     # These CANNOT serve as blind labels in a comparison against that model:
     # wherever a suggestion was accepted, the label is partly a copy of the
     # thing being measured, so the model scores against itself.
-    assisted: set[str]
+    assisted: set[str]          # pass-1 assistance — what the headline depends on
+    assisted_p2: set[str]       # pass-2 assistance, reported with the ceiling
+    cant_judge_p2: set[str]     # a pass-2 "can't judge" is not an empty tick set
 
 
 def read_labels(gold_ids: set[str]) -> Labels:
@@ -144,14 +151,23 @@ def read_labels(gold_ids: set[str]) -> Labels:
     for d in sorted(rows, key=lambda r: r.get("labeled_at", "")):
         latest[(d["track_id"], int(d.get("pass", 1)))] = d
 
-    ticks, cant, p2, empty, assisted = {}, set(), {}, set(), set()
+    ticks, cant, p2, empty = {}, set(), {}, set()
+    assisted, assisted_p2, cj2 = set(), set(), set()
     for (tid, pas), d in latest.items():
         cats = set(d.get("category_ids") or [])
-        if d.get("assisted"):
-            assisted.add(tid)
         if pas == 2:
+            # Kept separate from pass 1. Unioning them lets an assisted RELABEL
+            # retroactively mark a genuinely blind pass-1 row as assisted, which
+            # would silently shrink the blind denominator the headline rests on.
+            if d.get("assisted"):
+                assisted_p2.add(tid)
+            if d.get("cant_judge"):
+                cj2.add(tid)
+                continue
             p2[tid] = cats
             continue
+        if d.get("assisted"):
+            assisted.add(tid)
         if d.get("cant_judge"):
             cant.add(tid)
             continue
@@ -159,7 +175,7 @@ def read_labels(gold_ids: set[str]) -> Labels:
         if not cats:
             empty.add(tid)
     return Labels(ticks=ticks, cant_judge=cant, pass2=p2, empty=empty,
-                  assisted=assisted)
+                  assisted=assisted, assisted_p2=assisted_p2, cant_judge_p2=cj2)
 
 
 # --------------------------------------------------------------------------
@@ -270,6 +286,26 @@ def paired_bootstrap(
         pick = rng.integers(0, len(keys), len(keys))
         means[b] = d[np.concatenate([idx[p] for p in pick])].mean()
     return float(np.nanmean(d)), float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
+def volume_metrics(scores: np.ndarray, cut: float, truth: list[set[int]]):
+    """§3.3: precision and recall over the categories a model actually assigns
+    at a given cut, plus the mean number assigned. Comparing a model that files
+    3.8 playlists per song against one that files 1.2 is not a comparison, which
+    is why the cut is chosen to equalise that count first."""
+    prec, rec, counts = [], [], []
+    for i, want in enumerate(truth):
+        picked = set(np.flatnonzero(scores[i] >= cut).tolist())
+        counts.append(len(picked))
+        if picked:
+            prec.append(len(picked & want) / len(picked))
+        if want:
+            rec.append(len(picked & want) / len(want))
+    return (
+        float(np.mean(prec)) if prec else float("nan"),
+        float(np.mean(rec)) if rec else float("nan"),
+        float(np.mean(counts)),
+    )
 
 
 def volume_matched_threshold(student: np.ndarray, target_per_song: float) -> float:
@@ -483,10 +519,21 @@ def main() -> None:
     # than averaged in where nobody would see them.
     blind = [t for t in ids if t not in lab.assisted]
     assisted = [t for t in ids if t in lab.assisted]
-    blind_claim = bool(blind)
+    n_blind_artists = len({g.artist_of[t] for t in blind})
+    blind_claim = (
+        len(blind) >= MIN_BLIND_SONGS and n_blind_artists >= MIN_BLIND_ARTISTS
+    )
     if assisted:
         log(f"\n  {len(assisted)} of {len(ids)} labelled songs were answered with the "
             f"model's suggestions on screen.")
+    if blind and not blind_claim:
+        log(
+            f"\n  !! ONLY {len(blind)} BLIND SONG(S) ACROSS {n_blind_artists} ARTIST(S), need "
+            f"{MIN_BLIND_SONGS}/{MIN_BLIND_ARTISTS}. Too few to carry the section 2 headline:\n"
+            "     the bootstrap resamples ARTISTS, so at this size the interval is degenerate\n"
+            "     (its endpoints can come out equal) and would read far more confident than\n"
+            "     the evidence. Reporting the assisted table instead, labelled as such."
+        )
     if not blind:
         log(
             "\n  !! NO BLIND ROWS. Every labelled song was answered with the model's own\n"
@@ -496,12 +543,18 @@ def main() -> None:
             "     is reported for completeness and is NOT a blind comparison. Say that\n"
             "     plainly wherever these numbers appear."
         )
-        ids = assisted
+    # section 8 is computed over the FULL labelled set regardless of the split
+    # below: it never reads a label, so shrinking it to the blind subset would
+    # throw away songs for no reason and make the one axis that survives an
+    # assisted run weaker than it needs to be.
+    section8_ids = list(ids)
+    if not blind_claim:
+        ids = list(ids)  # blind + assisted; nothing dropped, nothing claimed
     else:
         ids = blind
         if assisted:
             log(f"  {len(assisted)} assisted rows EXCLUDED from the headline; "
-                f"{len(blind)} blind rows carry it.")
+                f"{len(blind)} blind rows across {n_blind_artists} artists carry it.")
     log(f"primary denominator: {len(ids)} songs, {len(set(g.artist_of[t] for t in ids))} artists"
         + ("" if blind_claim else "   [ASSISTED — not a blind comparison]"))
 
@@ -509,33 +562,58 @@ def main() -> None:
     truth = [{ix[c] for c in lab.ticks[t]} for t in ids]
     artists = [g.artist_of[t] for t in ids]
 
-    claude_order, claude_scores = claude_rankings(g, ids)
+    claude_top5, claude_scores = claude_rankings(g, ids)
+    # Full 41-wide, not the 5-wide top-5: recall@k takes order[:, :k] with
+    # k = |ticked set|, so a 5-wide array would silently truncate the moment
+    # anyone ticks six categories. Positions 0-4 are the model's ranked five
+    # (the unranked 36 score -inf) and the rest fall in index order, so this is
+    # identical to the top-5 array wherever the top-5 array was valid.
+    claude_order = rank_from_scores(claude_scores)
+    assert np.array_equal(claude_order[:, :5], claude_top5), "top-5 order changed"
     base_d = METRICS[cfg["primary_metric"]](claude_order, truth)
 
     z = np.load(ART / a.oof, allow_pickle=False)
     isrc_rows = {s: i for i, s in enumerate(z["isrc"].tolist())}
     rows = np.array([isrc_rows[g.isrc_of[t]] for t in ids])
 
-    orders = [("claude", claude_order)]
-    table = [report("claude", claude_order, truth, artists, cfg)]
-    for label, key in (("student (audio)", a.config), ("text-only (CLAP text)", a.text_config)):
-        k = f"scores__{key}"
-        if k not in z:
-            log(f"  ! {label}: '{key}' not in {a.oof} — run train.py --only \"{key}\" --oof-out")
-            continue
-        o = rank_from_scores(z[k][rows])
-        orders.append((label, o))
-        table.append(report(label, o, truth, artists, cfg, base_d))
+    def model_scores(id_list):
+        """(name, score matrix) for every model, over an arbitrary song list."""
+        c_order, c_scores = claude_rankings(g, id_list)
+        out = [("claude", c_scores)]
+        r = np.array([isrc_rows[g.isrc_of[t]] for t in id_list])
+        for label, key in (("student (audio)", a.config),
+                           ("text-only (CLAP text)", a.text_config)):
+            k = f"scores__{key}"
+            if k in z:
+                out.append((label, z[k][r]))
+        aa_, _ = artist_average_scores(g, id_list)
+        out.append(("artist-average", aa_))
+        out.append(("global prior", global_prior_scores(g, len(id_list))))
+        return c_order, out
 
-    aa, defined = artist_average_scores(g, ids)
-    aa_order = rank_from_scores(aa)
-    orders.append(("artist-average", aa_order))
-    table.append(report("artist-average", aa_order, truth, artists, cfg, base_d))
+    _, scored = model_scores(ids)
+    orders = [(n, claude_order if n == "claude" else rank_from_scores(m))
+              for n, m in scored]
+    missing = [lbl for lbl in ("student (audio)", "text-only (CLAP text)")
+               if lbl not in {n for n, _ in scored}]
+    for lbl in missing:
+        log(f"  ! {lbl}: not in {a.oof} — run train.py --oof-out")
+
+    table = [report("claude", claude_order, truth, artists, cfg)]
+    for name, o in orders[1:]:
+        table.append(report(name, o, truth, artists, cfg, base_d))
+    _, defined = artist_average_scores(g, ids)
     log(f"  artist-average defined for {int(defined.sum())}/{len(ids)} songs "
         f"(rest fall back to the global prior)")
-    prior_order = rank_from_scores(global_prior_scores(g, len(ids)))
-    orders.append(("global prior", prior_order))
-    table.append(report("global prior", prior_order, truth, artists, cfg, base_d))
+
+    # Section 8 reads no labels, so it runs over every labelled song rather than
+    # the blind subset. Rebuild only when the two lists differ.
+    if section8_ids == ids:
+        orders_full = orders
+    else:
+        c_order_full, scored_full = model_scores(section8_ids)
+        orders_full = [(n, c_order_full if n == "claude" else rank_from_scores(m))
+                       for n, m in scored_full]
 
     log(f"\n{'model':24s} {'top1':>7} {'p@3':>7} {'rec@k':>7}   paired Δ vs claude "
         f"[{cfg['primary_metric']}]")
@@ -548,12 +626,58 @@ def main() -> None:
         log(f"{r['model']:24s} {r['top1']*100:6.1f}% {r['precision_at_3']*100:6.1f}% "
             f"{r['recall_at_k']*100:6.1f}%{d}")
 
-    # §4: intention-to-treat — all 251, student falls back to Claude with no audio.
+    # §3.3: compare at EQUAL VOLUME. Claude's live rule is score >= 65; each
+    # other model gets the cut that files the same mean number of playlists per
+    # song, and precision/recall are then read at that matched cut.
+    claude_cut_scores = np.where(np.isfinite(claude_scores), claude_scores, -np.inf)
+    c_prec, c_rec, target = volume_metrics(claude_cut_scores, LIVE_SCORE_THRESHOLD, truth)
+    log(f"\n=== §3.3 volume-matched: every model files {target:.2f} playlists/song ===")
+    log(f"{'model':24s} {'precision':>9} {'recall':>8} {'per song':>9}")
+    log(f"{'claude (score>=65)':24s} {c_prec*100:>8.1f}% {c_rec*100:>7.1f}% {target:>9.2f}")
+    volume_rows = [{"model": "claude", "cut": float(LIVE_SCORE_THRESHOLD),
+                    "precision": c_prec, "recall": c_rec, "per_song": target}]
+    for name, mat in scored:
+        if name == "claude":
+            continue
+        cut = volume_matched_threshold(mat, target)
+        pr, rc, per = volume_metrics(mat, cut, truth)
+        log(f"{name:24s} {pr*100:>8.1f}% {rc*100:>7.1f}% {per:>9.2f}")
+        volume_rows.append({"model": name, "cut": cut, "precision": pr,
+                            "recall": rc, "per_song": per})
+
+    # §4: intention-to-treat — all 251, student falls back to Claude wherever it
+    # has no usable audio. This is the number describing the system you would
+    # actually ship, and it is expected to be slightly worse than the primary.
     itt_ids = [t for t in g.track_ids if t in lab.ticks and t not in lab.cant_judge]
     if not cfg["include_empty_sets"]:
         itt_ids = [t for t in itt_ids if t not in lab.empty]
-    log(f"\nintention-to-treat denominator: {len(itt_ids)} songs "
-        f"({len([t for t in itt_ids if t in g.excluded])} fall back to Claude)")
+    fallback = [t for t in itt_ids if t in g.excluded]
+    log(f"\n=== §4 intention-to-treat: {len(itt_ids)} songs, "
+        f"{len(fallback)} falling back to Claude ===")
+    itt_truth = [{ix[c] for c in lab.ticks[t]} for t in itt_ids]
+    itt_artists = [g.artist_of[t] for t in itt_ids]
+    _, itt_c_scores = claude_rankings(g, itt_ids)
+    itt_claude = rank_from_scores(itt_c_scores)
+    itt_base = METRICS[cfg["primary_metric"]](itt_claude, itt_truth)
+    have = [i for i, t in enumerate(itt_ids) if t not in g.excluded]
+    itt_table = [report("claude (ITT)", itt_claude, itt_truth, itt_artists, cfg)]
+    for name, key in (("student (audio)", a.config),
+                      ("text-only (CLAP text)", a.text_config)):
+        k = f"scores__{key}"
+        if k not in z:
+            continue
+        # Claude's order stands in wherever the student has no audio at all.
+        o = itt_claude.copy()
+        sub_rows = np.array([isrc_rows[g.isrc_of[itt_ids[i]]] for i in have])
+        o[have] = rank_from_scores(z[k][sub_rows])
+        itt_table.append(report(f"{name} ITT", o, itt_truth, itt_artists, cfg, itt_base))
+    for r in itt_table:
+        d = ""
+        if "paired_delta" in r:
+            d = (f"  {r['paired_delta']*100:+6.1f} pts  "
+                 f"[{r['ci95'][0]*100:+5.1f}, {r['ci95'][1]*100:+5.1f}]"
+                 f"{'  CROSSES ZERO' if r['crosses_zero'] else ''}")
+        log(f"{r['model']:24s} {r['top1']*100:6.1f}%{d}")
 
     # self-agreement ceiling from the pass-2 relabels
     both = [t for t in lab.pass2 if t in lab.ticks]
@@ -562,7 +686,12 @@ def main() -> None:
         log(f"your own self-agreement (pass 1 vs pass 2, n={len(both)}): "
             f"{same/len(both)*100:.1f}% identical sets")
 
-    streaming = streaming_axis(g, ids, orders, cfg) if cfg.get("streaming_axis") else []
+    # NB: section8_ids, not ids — see the note where it is built.
+    streaming = (
+        streaming_axis(g, section8_ids, orders_full, cfg)
+        if cfg.get("streaming_axis")
+        else []
+    )
 
     payload = {
         "config": cfg,
@@ -572,9 +701,15 @@ def main() -> None:
                         "artists": len(set(artists))},
         "labels": {"pass1": len(lab.ticks), "cant_judge": len(lab.cant_judge),
                    "empty": len(lab.empty), "pass2": len(lab.pass2),
-                   "assisted": len(lab.assisted)},
+                   "assisted_pass1": len(lab.assisted),
+                   "assisted_pass2": len(lab.assisted_p2),
+                   "cant_judge_pass2": len(lab.cant_judge_p2)},
         "blind_claim": blind_claim,
         "table": table,
+        "volume_matched": volume_rows,
+        "itt_table": itt_table,
+        "blind": {"songs": len(blind), "artists": n_blind_artists,
+                  "min_songs": MIN_BLIND_SONGS, "min_artists": MIN_BLIND_ARTISTS},
     }
     (ART / a.out).write_text(json.dumps(payload, indent=2))
     log(f"\nwrote {ART / a.out}")
@@ -626,6 +761,18 @@ def self_test() -> None:
     st = np.arange(20, dtype=float).reshape(4, 5)
     assert volume_matched_threshold(st, 2.0) == 12.0, volume_matched_threshold(st, 2.0)
     log("volume-matched threshold          OK")
+
+    # precision/recall at a cut, by hand. Row 0 picks cats {1,2} against truth
+    # {1,2} -> 1.0/1.0. Row 1 picks {2} against {0,2} -> 1.0 precision, 0.5 recall.
+    sc = np.array([[0.0, 9.0, 8.0], [1.0, 2.0, 9.0]])
+    pr, rc, per = volume_metrics(sc, 5.0, [{1, 2}, {0, 2}])
+    assert (pr, rc, per) == (1.0, 0.75, 1.5), (pr, rc, per)
+    log(f"volume metrics at a cut           OK  (p={pr:.2f} r={rc:.2f} n={per:.1f})")
+
+    # A cut nothing clears must not silently score 0 precision over 0 picks.
+    pr2, rc2, per2 = volume_metrics(sc, 99.0, [{1}, {2}])
+    assert np.isnan(pr2) and rc2 == 0.0 and per2 == 0.0, (pr2, rc2, per2)
+    log("empty selection -> nan precision   OK")
 
     # --- section 8 statistic, hand-checked ---
     # perfect separation: mu=3, ss_tot=16, ss_between=2*(1-3)^2+2*(5-3)^2=16 -> 1.0
