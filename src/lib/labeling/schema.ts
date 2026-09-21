@@ -50,6 +50,15 @@ export const SuggestionSchema = z.object({
 });
 export type Suggestion = z.infer<typeof SuggestionSchema>;
 
+// The model's answer to ONE pair. `score` is null when the model never ranked
+// that category for that track, which is itself an implicit "no". `verdict`
+// applies the cache's own confidence_threshold so the UI does not re-implement
+// the rule the app actually ships.
+export interface PairSuggestion {
+  score: number | null;
+  verdict: "yes" | "no";
+}
+
 export const LabelPairSchema = z.object({
   pair_id: z.string().min(1),
   track_id: z.string().min(1),
@@ -148,6 +157,12 @@ export const PairLabelInputSchema = z.object({
   answer: z.enum(["yes", "no", "cant_judge"]),
   elapsed_ms: z.number().int().min(0),
   definitions_sha256: z.string().min(1),
+  // True when the model's score for this pair was on screen as it was
+  // answered. Defaults false, so every pair row written before 2026-09-21
+  // stays blind. This one matters more than the track flag: the pairs sample
+  // was stratified by score bin to measure calibration, and an answer given
+  // with the score visible measures the threshold, not the judgement.
+  assisted: z.boolean().default(false),
 });
 
 export const LabelInputSchema = z.union([
@@ -186,7 +201,12 @@ export interface LabelState {
   // The gold set: no-genre songs from the second draw. Empty when it is absent.
   gold: Array<LabelTrack & { done: boolean }>;
   pairs: Array<
-    LabelTrack & { pair_id: string; category_id: string; done: boolean }
+    LabelTrack & {
+      pair_id: string;
+      category_id: string;
+      done: boolean;
+      suggestion?: PairSuggestion;
+    }
   >;
   // opens_at is null until the first-pass label exists.
   relabel: Array<LabelTrack & { done: boolean; opens_at: string | null }>;

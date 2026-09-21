@@ -186,3 +186,42 @@ export interface TrackBulkInput {
   definitions_sha256: string;
   assisted: true;
 }
+
+// Bulk "accept all suggestions" for the pairs queue: the model's own verdict as
+// the answer for every pair still unanswered.
+//
+// `cant_judge` is never produced. It means a human looked and could not decide,
+// which is not something accepting a suggestion can express — and treating it
+// as a third model output would put a value in the data that no model emitted.
+export function bulkAcceptPairInputs(
+  items: readonly {
+    pair_id: string;
+    done: boolean;
+    suggestion?: { score: number | null; verdict: "yes" | "no" };
+  }[],
+  opts: { definitions_sha256: string; elapsed_ms: number },
+): PairBulkInput[] {
+  return items.flatMap((item) =>
+    item.done || !item.suggestion
+      ? []
+      : [
+          {
+            kind: "pair" as const,
+            pair_id: item.pair_id,
+            answer: item.suggestion.verdict,
+            elapsed_ms: opts.elapsed_ms,
+            definitions_sha256: opts.definitions_sha256,
+            assisted: true as const,
+          },
+        ],
+  );
+}
+
+export interface PairBulkInput {
+  kind: "pair";
+  pair_id: string;
+  answer: "yes" | "no";
+  elapsed_ms: number;
+  definitions_sha256: string;
+  assisted: true;
+}

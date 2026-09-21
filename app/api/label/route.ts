@@ -24,6 +24,7 @@ import {
   type LabelRow,
   type GoldSample,
   type LabelSample,
+  type PairSuggestion,
   type Suggestion,
 } from "@/src/lib/labeling/schema";
 
@@ -36,9 +37,17 @@ export const dynamic = "force-dynamic";
 // with the model's own ranking on screen cannot then serve as a blind label in
 // the comparison against that model. Those rows are stamped `assisted: true`.
 //
-// The PAIRS queue stays blind and this is not negotiable: the sample's design
-// file (score bins) is still never read here, because a pair answer is
-// worthless if the bin it was drawn from was visible.
+// The PAIRS queue is assisted too, as of 2026-09-21, and the cost there is
+// larger than on the tracks. The 200 pairs were stratified across pre-registered
+// SCORE BINS to measure calibration — "when the model says 85, how often is it
+// right?" — so an answer given with the score on screen measures the threshold
+// rather than the judgement, and the calibration curve comes out right by
+// construction. Those rows are stamped `assisted: true`.
+//
+// The draw's design file is still never read here. That is now a narrower
+// guarantee than it sounds: a bin is derivable from the score, so what it still
+// protects is only the INCLUSION PROBABILITIES, which the estimator needs and
+// which nothing on the page should ever see.
 
 const cachePath = () => join(dataDir(), "cache.json");
 
@@ -54,6 +63,28 @@ function trackSuggestions(
       .filter((m) => cache.categories[m.category_id])
       .map((m) => ({ category_id: m.category_id, score: m.score }));
     if (picks.length) out[track_id] = picks;
+  }
+  return out;
+}
+
+// The model's answer to each sampled pair. A category the model never ranked
+// for that track has no score, and its verdict is "no" — which is exactly what
+// the app does when it decides what to file where.
+function pairSuggestions(
+  cache: Pick<Cache, "assignments" | "config">,
+  pairs: LabelSample["pairs"],
+): Record<string, PairSuggestion> {
+  const threshold = cache.config.confidence_threshold;
+  const out: Record<string, PairSuggestion> = {};
+  for (const p of pairs) {
+    const match = (cache.assignments?.[p.track_id]?.matches ?? []).find(
+      (m) => m.category_id === p.category_id,
+    );
+    const score = match?.score ?? null;
+    out[p.pair_id] = {
+      score,
+      verdict: score !== null && score >= threshold ? "yes" : "no",
+    };
   }
   return out;
 }
@@ -84,6 +115,7 @@ export async function GET() {
         definitionsSha: definitionsSha256(definitions),
         labels,
         suggestions: trackSuggestions(cache),
+        pairSuggestions: pairSuggestions(cache, sample.pairs),
       }),
     );
   } catch (err) {

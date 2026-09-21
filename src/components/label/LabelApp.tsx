@@ -11,6 +11,7 @@ import { FOCUS_RING } from "./focus";
 import {
   MODES,
   bulkAcceptInputs,
+  bulkAcceptPairInputs,
   categoryOrder,
   earliestOpening,
   firstUnfinishedMode,
@@ -121,17 +122,24 @@ export function LabelApp() {
   // request at a time means a mid-run failure stops with an exact count rather
   // than leaving an unknown number in flight.
   async function acceptAll() {
-    if (mode === "pairs") return;
-    const inputs = bulkAcceptInputs(
-      itemsFor(state, mode) as Parameters<typeof bulkAcceptInputs>[0],
-      state.categories.map((c) => c.id),
-      {
-        pass: mode === "relabel" ? 2 : 1,
-        set: mode === "gold" ? "gold" : "random",
-        definitions_sha256: state.definitions_sha256,
-        elapsed_ms: 0,
-      },
-    );
+    const inputs: LabelInput[] =
+      mode === "pairs"
+        ? bulkAcceptPairInputs(
+            itemsFor(state, mode) as Parameters<
+              typeof bulkAcceptPairInputs
+            >[0],
+            { definitions_sha256: state.definitions_sha256, elapsed_ms: 0 },
+          )
+        : bulkAcceptInputs(
+            itemsFor(state, mode) as Parameters<typeof bulkAcceptInputs>[0],
+            state.categories.map((c) => c.id),
+            {
+              pass: mode === "relabel" ? 2 : 1,
+              set: mode === "gold" ? "gold" : "random",
+              definitions_sha256: state.definitions_sha256,
+              elapsed_ms: 0,
+            },
+          );
     setError(null);
     setBulk({ done: 0, total: inputs.length });
     for (const [i, input] of inputs.entries()) {
@@ -190,6 +198,7 @@ export function LabelApp() {
           <PairLabeler
             key={pair.pair_id}
             category={category}
+            suggestion={pair.suggestion}
             saved={pairSession[pair.pair_id]}
             busy={busy}
             error={error}
@@ -198,7 +207,11 @@ export function LabelApp() {
             // Only an answered pair can be left without answering it.
             canNext={pair.done}
             onNext={next}
-            onAnswer={(answer: PairAnswer, elapsed_ms: number) =>
+            onAnswer={(
+              answer: PairAnswer,
+              elapsed_ms: number,
+              assisted: boolean,
+            ) =>
               submit(
                 {
                   kind: "pair",
@@ -206,6 +219,7 @@ export function LabelApp() {
                   answer,
                   elapsed_ms,
                   definitions_sha256: state.definitions_sha256,
+                  assisted,
                 },
                 pair.pair_id,
               )
@@ -293,7 +307,7 @@ export function LabelApp() {
             </button>
           ))}
         </nav>
-        {mode !== "pairs" && items.some((i) => !i.done) && (
+        {items.some((i) => !i.done) && (
           <div className="ml-auto flex items-baseline gap-4">
             {bulk === null && (
               <button
@@ -340,7 +354,7 @@ export function LabelApp() {
           <span
             className={clsx(
               "font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]",
-              mode === "pairs" || !items.some((i) => !i.done) ? "ml-auto" : "",
+              items.some((i) => !i.done) ? "" : "ml-auto",
             )}
           >
             {doneCount} / {items.length}

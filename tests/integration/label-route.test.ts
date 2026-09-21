@@ -258,23 +258,27 @@ describe("GET /api/label", () => {
   // Since 2026-09-21 the TRACK queues carry the model's suggestions, by
   // request. This test now pins where that stops: the pairs queue, and the
   // sample design, stay blind.
-  it("keeps the pairs queue blind while the track queues carry suggestions", async () => {
+  // Both queues are assisted since 2026-09-21, but they carry DIFFERENT things.
+  // A pair asks about one category, so it gets one verdict — never the track's
+  // ranked five, which would answer a question that was not asked.
+  it("gives pairs one verdict and never the track's ranked list", async () => {
     await seed({ labels: [pass1Row("t_a", T0)] });
     const body = (await (await GET()).json()) as {
       random: Array<{ suggestions?: unknown }>;
-      pairs: unknown[];
+      pairs: Array<{ suggestion?: unknown; suggestions?: unknown }>;
     };
     expect(body.random[0]!.suggestions).toBeDefined();
+    expect(body.pairs[0]!.suggestion).toMatchObject({
+      verdict: expect.stringMatching(/^(yes|no)$/),
+    });
+    expect(body.pairs[0]!.suggestions).toBeUndefined();
 
     const keys = new Set<string>();
     walk(body.pairs, (k) => {
       if (k !== null) keys.add(k);
     });
-    for (const banned of ["suggestions", "score", "matches", "rank", "bin"])
+    for (const banned of ["suggestions", "matches", "rank", "bin"])
       expect(keys.has(banned)).toBe(false);
-    expect(JSON.stringify(body.pairs)).not.toMatch(
-      /"(suggestions|score|matches|rank|bin)"/,
-    );
   });
 
   it("never serves the sample design's score bins anywhere", async () => {
@@ -391,6 +395,7 @@ describe("POST /api/label", () => {
         "track_id",
         "category_id",
         "labeled_at",
+        "assisted",
       ].sort(),
     );
   });

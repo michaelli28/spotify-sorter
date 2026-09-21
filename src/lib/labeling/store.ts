@@ -18,6 +18,7 @@ import {
   type LabelSample,
   type LabelState,
   type LabelTrack,
+  type PairSuggestion,
   type Suggestion,
 } from "./schema";
 
@@ -128,9 +129,15 @@ export function buildLabelState(
     labels: readonly LabelRow[];
     // track_id -> the model's ranked suggestions. Omit for a blind page.
     suggestions?: Readonly<Record<string, readonly Suggestion[]>>;
+    // pair_id -> the model's answer to that pair. Separate from `suggestions`
+    // and keyed differently on purpose: a pair is a (track, category) question,
+    // so the track's ranked list is the wrong shape and would leak the other
+    // four categories into a question about one.
+    pairSuggestions?: Readonly<Record<string, PairSuggestion>>;
   },
 ): LabelState {
   const { tracks, artists, categories, sample, labels, suggestions } = input;
+  const pairSuggestions = input.pairSuggestions;
 
   // Blind by DEFAULT: a caller must ask for suggestions. The pairs queue shares
   // this helper, and a yes/no answer about one named category with the model's
@@ -182,11 +189,15 @@ export function buildLabelState(
           `Sample pair ${p.pair_id} names category ${p.category_id}, which is not in the cache`,
         );
       }
+      const suggestion = pairSuggestions?.[p.pair_id];
       return {
+        // Never the track's ranked list here: a pair asks about ONE category,
+        // and the other four would be an answer to a question not asked.
         ...labelTrack(p.track_id),
         pair_id: p.pair_id,
         category_id: p.category_id,
         done: pairsDone.has(p.pair_id),
+        ...(suggestion ? { suggestion } : {}),
       };
     }),
     // Assisted too, matching pass 1. If one pass saw the suggestions and the
