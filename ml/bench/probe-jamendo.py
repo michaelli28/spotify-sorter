@@ -76,6 +76,19 @@ PROBE_SEED = 1234
 # genuinely is offset by one relative to MERT-v2's.
 CARDS = {
     "mert2": {"auroc": 0.7944093942642212, "ap": 0.16676680743694305, "layer_index": 15},
+    # mert1 is DELIBERATELY absent. Two published numbers exist for
+    # MERT-v1-95M on this task (76.4 in the MARBLE paper's Table 4, 77.5 in
+    # M2D-CLAP's Table III) and they were measured under different framework
+    # versions, so "the" published value is ambiguous. Worse, the layer is:
+    # MARBLE names layer 6, but MERT-v1-95M returns 13 hidden states for 12
+    # transformer layers, so index 0 IS the embedding output and "layer 6"
+    # could be index 5 or 6. Guessing would produce a confident delta against
+    # the wrong baseline at the wrong layer.
+    #
+    # The comparison worth making needs neither: run v1 and v2 through THIS
+    # pipeline and read the gap. Same chunking, same pooling, same probe, same
+    # split — the encoder is the only thing that differs, which is cleaner than
+    # comparing each against a separately-measured published figure.
 }
 CARD_LAYER_INDEX = CARDS["mert2"]["layer_index"]  # the default --layer
 
