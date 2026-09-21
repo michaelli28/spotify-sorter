@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Button } from "@/src/components/design/Button";
 import { Definition } from "./Definition";
 import { FOCUS_RING } from "./focus";
@@ -18,6 +18,8 @@ const ANSWERS: ReadonlyArray<{ id: PairAnswer; label: string }> = [
 export function PairLabeler({
   category,
   suggestion,
+  showing,
+  onToggleShowing,
   saved,
   busy,
   error,
@@ -31,6 +33,9 @@ export function PairLabeler({
   // The model's own answer to this pair. Undefined when the server was not
   // asked for it.
   suggestion?: PairSuggestion;
+  // Session-level, same reason as the track labeler.
+  showing: boolean;
+  onToggleShowing: () => void;
   // This page session's answer, if any.
   saved: PairAnswer | undefined;
   busy: boolean;
@@ -42,9 +47,8 @@ export function PairLabeler({
   onAnswer: (answer: PairAnswer, elapsed_ms: number, assisted: boolean) => void;
 }) {
   const nameId = useId();
-  // Starts shown. Hide makes THIS pair blind again, but once the score has been
-  // displayed the row stays assisted: it cannot be un-seen.
-  const [showing, setShowing] = useState(true);
+  // Once the score has been displayed for this pair the row stays assisted: it
+  // cannot be un-seen.
   const sawSuggestion = useRef(false);
   const hasSuggestion = suggestion !== undefined;
   useEffect(() => {
@@ -77,7 +81,7 @@ export function PairLabeler({
             </span>
             <button
               type="button"
-              onClick={() => setShowing((v) => !v)}
+              onClick={onToggleShowing}
               className={`text-sm underline text-[var(--color-text-secondary)] ${FOCUS_RING}`}
             >
               {showing ? "Hide" : "Show"}

@@ -24,6 +24,8 @@ export type SavedAnswer = Pick<TrackAnswer, "category_ids" | "cant_judge">;
 export function TrackLabeler({
   categories,
   suggestions,
+  showing,
+  onToggleShowing,
   prefill,
   busy,
   error,
@@ -37,6 +39,11 @@ export function TrackLabeler({
   // The model's ranked guesses for this track, best first. Undefined when the
   // server was not asked for them.
   suggestions?: readonly Suggestion[];
+  // Lifted to the page: Hide is a preference for the session, not a per-song
+  // state. Kept local it resets on every song, which would make relabelling
+  // blind cost one click per song.
+  showing: boolean;
+  onToggleShowing: () => void;
   // This page session's answer, if any.
   prefill: SavedAnswer | undefined;
   busy: boolean;
@@ -51,11 +58,9 @@ export function TrackLabeler({
   const [ticked, setTicked] = useState<ReadonlySet<string>>(
     () => new Set(prefill?.category_ids),
   );
-  // Starts shown: seeing them is the point. Hiding them makes THIS song blind
-  // again, and `sawSuggestions` keeps the honest record — once they have been
-  // on screen for this song, the row is assisted even if they are hidden before
+  // `sawSuggestions` keeps the honest record per SONG: once the guesses have
+  // been on screen for this one, the row is assisted even if hidden before
   // saving, because it cannot be un-seen.
-  const [showing, setShowing] = useState(true);
   const sawSuggestions = useRef(false);
   const hasSuggestions = (suggestions?.length ?? 0) > 0;
   // Recorded in an effect, not during render: a ref written while rendering is
@@ -101,7 +106,7 @@ export function TrackLabeler({
             </span>
             <button
               type="button"
-              onClick={() => setShowing((v) => !v)}
+              onClick={onToggleShowing}
               className={`text-sm underline text-[var(--color-text-secondary)] ${FOCUS_RING}`}
             >
               {showing ? "Hide" : "Show"}

@@ -60,6 +60,9 @@ export function LabelApp() {
   const [error, setError] = useState<string | null>(null);
   // Bulk accept: null = idle, "confirm" = asking, {done,total} = running.
   // Deliberately NOT a window.confirm — a modal dialog blocks the page.
+  // Whether the model's guesses are on screen. Session-wide and sticky, so
+  // "label the rest of these blind" is one click rather than one per song.
+  const [showSuggestions, setShowSuggestions] = useState(true);
   const [bulk, setBulk] = useState<
     null | "confirm" | { done: number; total: number }
   >(null);
@@ -199,6 +202,8 @@ export function LabelApp() {
             key={pair.pair_id}
             category={category}
             suggestion={pair.suggestion}
+            showing={showSuggestions}
+            onToggleShowing={() => setShowSuggestions((v) => !v)}
             saved={pairSession[pair.pair_id]}
             busy={busy}
             error={error}
@@ -248,6 +253,8 @@ export function LabelApp() {
           key={key}
           categories={categoryOrder(state.categories, track.track_id, pass)}
           suggestions={track.suggestions}
+          showing={showSuggestions}
+          onToggleShowing={() => setShowSuggestions((v) => !v)}
           prefill={session[key]}
           busy={busy}
           error={error}
