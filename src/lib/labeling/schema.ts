@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 // Shapes for the labeling study (Days 3-4). Three rules shape this file:
-// - The PAIRS task stays blind, absolutely: score bins live only in
-//   SampleDesign, which is never served. A pair answer is worthless if the bin
-//   it was drawn from was on screen.
+// - What is never served is the DRAW'S DESIGN: bin membership and the
+//   inclusion probabilities the estimator needs. Both queues may be assisted
+//   (the pairs one became so on 2026-09-21), and a pair gets one verdict, never
+//   the track's ranked five — a question about one category answered with the
+//   other four visible is a different question.
 // - The TRACK task can now be assisted. On 2026-09-21 Michael asked to see the
 //   model's suggestions while labeling, with the cost stated: a track labeled
 //   with the model's answer visible cannot serve as a blind label in the

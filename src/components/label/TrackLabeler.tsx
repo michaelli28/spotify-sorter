@@ -26,6 +26,8 @@ export function TrackLabeler({
   suggestions,
   showing,
   onToggleShowing,
+  wasSeen,
+  onSeen,
   prefill,
   busy,
   error,
@@ -44,6 +46,12 @@ export function TrackLabeler({
   // blind cost one click per song.
   showing: boolean;
   onToggleShowing: () => void;
+  // Asks whether this item already had the guesses on screen earlier this
+  // session. A FUNCTION, called from the save handler rather than read during
+  // render: the ref below forgets on remount, this does not, and reading a ref
+  // while rendering is not guaranteed to be stable.
+  wasSeen: () => boolean;
+  onSeen: () => void;
   // This page session's answer, if any.
   prefill: SavedAnswer | undefined;
   busy: boolean;
@@ -68,8 +76,11 @@ export function TrackLabeler({
   // keyed per song, so the flag starts false for each new track and latches the
   // moment the suggestions have actually been on screen for it.
   useEffect(() => {
-    if (hasSuggestions && showing) sawSuggestions.current = true;
-  }, [hasSuggestions, showing]);
+    if (hasSuggestions && showing) {
+      sawSuggestions.current = true;
+      onSeen();
+    }
+  }, [hasSuggestions, showing, onSeen]);
 
   const suggested = new Map((suggestions ?? []).map((s) => [s.category_id, s]));
 
@@ -222,7 +233,7 @@ export function TrackLabeler({
                   category_ids: [],
                   cant_judge: true,
                   elapsed_ms: elapsed(),
-                  assisted: sawSuggestions.current,
+                  assisted: (sawSuggestions.current || wasSeen()),
                 })
               }
             >
@@ -236,7 +247,7 @@ export function TrackLabeler({
                   category_ids: [...ticked],
                   cant_judge: false,
                   elapsed_ms: elapsed(),
-                  assisted: sawSuggestions.current,
+                  assisted: (sawSuggestions.current || wasSeen()),
                 })
               }
             >

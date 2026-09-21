@@ -145,6 +145,9 @@ export function bulkAcceptInputs(
     track_id: string;
     done: boolean;
     suggestions?: readonly { category_id: string }[];
+    // Present on the relabel queue. Kept in the type rather than cast away so
+    // the locked-item skip below cannot be forgotten.
+    opens_at?: string | null;
   }[],
   categoryIdsInCacheOrder: readonly string[],
   opts: {
@@ -152,10 +155,15 @@ export function bulkAcceptInputs(
     set: "random" | "gold";
     definitions_sha256: string;
     elapsed_ms: number;
+    // For the relabel window. Omit on queues that have none.
+    now?: number;
   },
 ): TrackBulkInput[] {
   return items.flatMap((item) => {
     if (item.done) return [];
+    // A locked relabel would 403, and because the run is sequential that would
+    // abort it and silently skip every open item after the first locked one.
+    if (opts.now !== undefined && !isOpen(item, opts.now)) return [];
     const wanted = new Set((item.suggestions ?? []).map((s) => s.category_id));
     if (wanted.size === 0) return [];
     return [

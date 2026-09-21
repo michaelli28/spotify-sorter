@@ -1,6 +1,6 @@
 {
-  "frozen_at": "2026-09-21T04:09:36+00:00",
-  "protocol_sha256": "a7c6b46b99114ff7a9320df7b5bbefb5862270f5ea71a26ba89d617c73ed685e",
+  "frozen_at": "2026-09-21T05:46:35+00:00",
+  "protocol_sha256": "b8db818dad30e91724db3989387c2988ad4ccf75b49a7aee2103ed2bd227e11b",
   "primary_metric": "top1",
   "include_empty_sets": false,
   "streaming_axis": true,

@@ -166,10 +166,9 @@ rather than merely uncertain.
 - `score-gold.py` computes the section 2 headline **from blind rows only**. Assisted
   rows are excluded from it and reported separately. If there are no blind rows at all,
   the script refuses to present the result as a blind comparison and prints why.
-- The **pairs** task remains blind absolutely. Score bins are still never served, and a
-  static tripwire plus an integration test both enforce that the pairs queue carries no
-  suggestions, no scores and no bins. A yes/no answer about one named category with that
-  category's score visible would simply be the answer read back.
+- The **pairs** task was ALSO made assisted, later the same day — see section 7c. This
+  bullet previously claimed it stayed blind absolutely; that was true when written and
+  false within hours, and it is corrected rather than deleted so the drift is visible.
 - The **relabel** pass (self-agreement ceiling) is assisted too, matching pass 1. Mixing
   conditions across the two passes would conflate "changed my mind" with "had help the
   first time". Note the consequence: if suggestions are accepted wholesale on both
@@ -180,6 +179,41 @@ readable against each other (student vs text-only vs artist-average vs prior all
 same labels), and section 8 is untouched because it never used labels. What is lost is
 the headline — "the student agrees with Michael's blind labels more often than Claude
 does" — because Claude's agreement is no longer independent of Claude.
+
+## 7c. The pairs task was made assisted too — 2026-09-21
+
+Later the same day Michael asked for the same treatment on the pairs queue. It shipped:
+each pair shows the model's score for that category and its yes/no verdict, with
+"Accept suggestion" and the header "Accept all suggestions".
+
+**The cost is larger here than on the tracks.** The 200 pairs were drawn stratified
+across eight pre-registered SCORE BINS in order to measure calibration — "when the model
+says 85, how often is it right?" An answer given with the score on screen measures the
+threshold rather than the judgement: accept the suggestion and the answer is "yes"
+exactly when the score cleared the cut. The curve then comes out right by construction.
+
+That is not hypothetical. 198 of the 199 usable pairs are assisted, and
+`ml/score-pairs.py` prints 0.0% for every bin below the score>=65 cut and 100.0% for
+every bin at or above it, with the boundary landing exactly on the threshold. The script
+refuses the word calibration for that table and says why.
+
+**What is still withheld.** Only the draw's design file: bin membership and, more
+importantly, the INCLUSION PROBABILITIES the estimator needs. The bin is derivable from
+the score, so the earlier "bins are never served" guarantee is now narrower than it
+sounds, and the route's own comment says so. Two tests still enforce the narrowed rule:
+the pairs queue receives ONE verdict and never the track's ranked five, and the design
+file is never read by anything the page can reach.
+
+**What survives.** `score-pairs.py` computes from blind rows only and needs at least 10
+of them, with at least 8 distinct tracks behind any single reported number. Relabelling
+pairs with Hide on produces blind rows that supersede the assisted ones, because rows are
+append-only and the latest per item wins.
+
+**This section was written on 2026-09-22, after labels existed.** It changes NO scoring
+rule — not the metrics, not the bins, not Q1/Q2/Q3, not the weighting. It corrects a
+description of the labelling interface that had become false, which is the opposite of
+the thing pre-registration exists to prevent. The alternative was leaving a frozen
+document asserting a blindness guarantee the shipped code does not provide.
 
 ## 8. Third axis — revealed preference (non-blind, secondary, never the headline)
 

@@ -292,6 +292,48 @@ describe("GET /api/label", () => {
       expect(keys.has(banned)).toBe(false);
   });
 
+  it("ratchets assisted up and never back down", async () => {
+    // The client flag is per-mount, so navigating Back to a song after hiding
+    // the suggestions resubmits it as blind even though they were displayed.
+    // Latest-row-wins in the analysis means that false-blind row would ERASE
+    // the honest one, so the server refuses the downgrade. Assisted may only
+    // ratchet up.
+    await seed();
+    const first = await POST(post(trackInput({ assisted: true })));
+    expect(first.status).toBe(200);
+    const second = await POST(post(trackInput({ assisted: false })));
+    expect(second.status).toBe(200);
+
+    const rows = (await writtenLines()) as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!.assisted).toBe(true);
+  });
+
+  it("leaves a genuinely blind song blind across repeated saves", async () => {
+    await seed();
+    await POST(post(trackInput({ assisted: false })));
+    await POST(post(trackInput({ assisted: false })));
+    const rows = (await writtenLines()) as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.assisted)).toEqual([false, false]);
+  });
+
+  it("ratchets pairs too, keyed by pair_id", async () => {
+    await seed();
+    const mk = (assisted: boolean) =>
+      post({
+        kind: "pair",
+        pair_id: "p001",
+        answer: "yes",
+        elapsed_ms: 10,
+        definitions_sha256: SHA,
+        assisted,
+      });
+    await POST(mk(true));
+    await POST(mk(false));
+    const rows = (await writtenLines()) as Array<Record<string, unknown>>;
+    expect(rows[1]!.assisted).toBe(true);
+  });
+
   it("404s with no_sample when sample.json is missing", async () => {
     await seed({ sample: false });
     const res = await GET();

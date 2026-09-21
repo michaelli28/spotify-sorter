@@ -79,7 +79,7 @@ describe("suggestions are opt-in", () => {
   });
 });
 
-describe("the pairs queue stays blind", () => {
+describe("the pairs queue never gets the track's ranked five", () => {
   it("never carries suggestions, even when every track has them", () => {
     const withPair = {
       ...BASE,

@@ -85,6 +85,38 @@ describe("hiding suggestions is a session preference", () => {
     expect((posts[1] as { assisted: boolean }).assisted).toBe(false);
   });
 
+  it("a song revisited after Hide is still assisted, not falsely blind", async () => {
+    // The per-item components remount on Back, so their own ref forgets that
+    // the guesses were ever displayed. Saving again would then write
+    // assisted:false for a song whose ticks ARE the model's — and because the
+    // analysis takes the latest row per song, that false-blind row would erase
+    // the honest one and re-enter the blind denominator.
+    const posts = stubServer(state());
+    const user = userEvent.setup();
+    render(<LabelApp />);
+
+    await screen.findByRole("heading", { name: "First Song" });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("heading", { name: "Second Song" });
+
+    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByRole("heading", { name: "First Song" });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    // Two saves: song 1, then song 1 again after Back.
+    expect(posts).toHaveLength(2);
+    const first = posts.filter(
+      (p) => (p as { track_id?: string }).track_id === "t1",
+    );
+    expect(first).toHaveLength(2);
+    // BOTH rows for that song stay assisted. It cannot be un-seen.
+    expect(first.map((p) => (p as { assisted: boolean }).assisted)).toEqual([
+      true,
+      true,
+    ]);
+  });
+
   it("Show brings them back for the rest of the session", async () => {
     stubServer(state());
     const user = userEvent.setup();

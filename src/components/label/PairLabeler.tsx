@@ -20,6 +20,8 @@ export function PairLabeler({
   suggestion,
   showing,
   onToggleShowing,
+  wasSeen,
+  onSeen,
   saved,
   busy,
   error,
@@ -36,6 +38,12 @@ export function PairLabeler({
   // Session-level, same reason as the track labeler.
   showing: boolean;
   onToggleShowing: () => void;
+  // Asks whether this item already had the guesses on screen earlier this
+  // session. A FUNCTION, called from the save handler rather than read during
+  // render: the ref below forgets on remount, this does not, and reading a ref
+  // while rendering is not guaranteed to be stable.
+  wasSeen: () => boolean;
+  onSeen: () => void;
   // This page session's answer, if any.
   saved: PairAnswer | undefined;
   busy: boolean;
@@ -52,8 +60,11 @@ export function PairLabeler({
   const sawSuggestion = useRef(false);
   const hasSuggestion = suggestion !== undefined;
   useEffect(() => {
-    if (hasSuggestion && showing) sawSuggestion.current = true;
-  }, [hasSuggestion, showing]);
+    if (hasSuggestion && showing) {
+      sawSuggestion.current = true;
+      onSeen();
+    }
+  }, [hasSuggestion, showing, onSeen]);
 
   const shownAt = useRef(0);
   useEffect(() => {
@@ -150,7 +161,7 @@ export function PairLabeler({
                 onAnswer(
                   a.id,
                   Math.max(0, Math.round(performance.now() - shownAt.current)),
-                  sawSuggestion.current,
+                  (sawSuggestion.current || wasSeen()),
                 )
               }
             >

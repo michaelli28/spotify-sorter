@@ -52,6 +52,31 @@ describe("bulkAcceptInputs", () => {
     expect(out[0]!.category_ids).toEqual(["c1", "c3"]);
   });
 
+  it("skips a relabel whose 48h window has not opened", () => {
+    // The run is sequential, so a locked item 403s and aborts everything after
+    // it. All 30 relabels were refused this way on 2026-09-21.
+    const now = 1_000_000
+    const items = [
+      { track_id: "open", done: false, opens_at: new Date(now - 1000).toISOString(),
+        suggestions: [{ category_id: "c1" }] },
+      { track_id: "locked", done: false, opens_at: new Date(now + 60_000).toISOString(),
+        suggestions: [{ category_id: "c1" }] },
+      { track_id: "never", done: false, opens_at: null,
+        suggestions: [{ category_id: "c1" }] },
+    ]
+    const out = bulkAcceptInputs(items, ORDER, { ...OPTS, pass: 2, now })
+    expect(out.map((r) => r.track_id)).toEqual(["open"])
+  })
+
+  it("ignores the window on queues that have none", () => {
+    const out = bulkAcceptInputs(
+      [{ track_id: "a", done: false, suggestions: [{ category_id: "c1" }] }],
+      ORDER,
+      { ...OPTS, now: 1_000_000 },
+    )
+    expect(out.map((r) => r.track_id)).toEqual(["a"])
+  })
+
   it("marks every row assisted, because every row is a copy of the model", () => {
     const out = bulkAcceptInputs(
       [{ track_id: "a", done: false, suggestions: [{ category_id: "c1" }] }],

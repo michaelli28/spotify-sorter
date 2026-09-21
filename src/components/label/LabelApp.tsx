@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { motion } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
@@ -63,6 +63,12 @@ export function LabelApp() {
   // Whether the model's guesses are on screen. Session-wide and sticky, so
   // "label the rest of these blind" is one click rather than one per song.
   const [showSuggestions, setShowSuggestions] = useState(true);
+  // Which items have had the guesses on screen this session. The per-item
+  // components remount on every Back, so their own ref forgets; this does not.
+  // The server ratchets too, which is the durable guarantee — this keeps the
+  // request body honest rather than relying on the server to correct it.
+  const seen = useRef<Set<string>>(new Set());
+  const markSeen = (id: string) => seen.current.add(id);
   const [bulk, setBulk] = useState<
     null | "confirm" | { done: number; total: number }
   >(null);
@@ -141,6 +147,7 @@ export function LabelApp() {
               set: mode === "gold" ? "gold" : "random",
               definitions_sha256: state.definitions_sha256,
               elapsed_ms: 0,
+              now,
             },
           );
     setError(null);
@@ -204,6 +211,8 @@ export function LabelApp() {
             suggestion={pair.suggestion}
             showing={showSuggestions}
             onToggleShowing={() => setShowSuggestions((v) => !v)}
+            wasSeen={() => seen.current.has(`pairs:${pair.pair_id}`)}
+            onSeen={() => markSeen(`pairs:${pair.pair_id}`)}
             saved={pairSession[pair.pair_id]}
             busy={busy}
             error={error}
@@ -255,6 +264,8 @@ export function LabelApp() {
           suggestions={track.suggestions}
           showing={showSuggestions}
           onToggleShowing={() => setShowSuggestions((v) => !v)}
+          wasSeen={() => seen.current.has(key)}
+          onSeen={() => markSeen(key)}
           prefill={session[key]}
           busy={busy}
           error={error}
