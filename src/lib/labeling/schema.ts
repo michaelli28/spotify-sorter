@@ -1,8 +1,14 @@
 import { z } from "zod";
 
-// Shapes for the blind labeling study (Days 3-4). Two rules shape this file:
-// - Anything the /label page receives carries no model output: no scores,
-//   ranks or score bins. Those live only in SampleDesign, which is never served.
+// Shapes for the labeling study (Days 3-4). Three rules shape this file:
+// - The PAIRS task stays blind, absolutely: score bins live only in
+//   SampleDesign, which is never served. A pair answer is worthless if the bin
+//   it was drawn from was on screen.
+// - The TRACK task can now be assisted. On 2026-09-21 Michael asked to see the
+//   model's suggestions while labeling, with the cost stated: a track labeled
+//   with the model's answer visible cannot serve as a blind label in the
+//   comparison against that same model. Such rows carry `assisted: true` so the
+//   analysis can separate them instead of quietly averaging them in.
 // - Labels are append-only rows; the latest row per item wins in analysis.
 
 export const LABEL_SEED = "spotifysorter-labels-2026-09-19";
@@ -34,6 +40,15 @@ export type PairBinId = (typeof PAIR_BINS)[number]["id"];
 const PAIR_BIN_IDS = PAIR_BINS.map((b) => b.id) as [PairBinId, ...PairBinId[]];
 
 const IsoDate = z.string().datetime();
+
+// One model suggestion shown beside a track. `score` is the model's own 0-100
+// number, surfaced because a suggestion without its confidence invites equal
+// trust in a 85 and a 51.
+export const SuggestionSchema = z.object({
+  category_id: z.string().min(1),
+  score: z.number(),
+});
+export type Suggestion = z.infer<typeof SuggestionSchema>;
 
 export const LabelPairSchema = z.object({
   pair_id: z.string().min(1),
@@ -115,6 +130,10 @@ export const TrackLabelInputSchema = z
     // Which pre-registered draw the song came from. Rows written before the
     // gold draw existed carry no field, so they default to the first sample.
     set: z.enum(["random", "gold"]).default("random"),
+    // True when the model's suggestions were on screen as this was answered.
+    // Defaults false so every row written before 2026-09-21 stays blind, which
+    // is what they were.
+    assisted: z.boolean().default(false),
   })
   .refine((l) => !l.cant_judge || l.category_ids.length === 0, {
     message: "cant_judge labels carry no categories",
@@ -156,6 +175,9 @@ export interface LabelTrack {
   title: string;
   artist_name: string;
   genres: string[];
+  // Present only when the server was asked for suggestions. Absent, not empty,
+  // when there are none — so "not offered" and "offered nothing" stay distinct.
+  suggestions?: readonly Suggestion[];
 }
 export interface LabelState {
   definitions_sha256: string;

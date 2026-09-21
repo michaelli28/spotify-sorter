@@ -121,6 +121,11 @@ class Labels:
     cant_judge: set[str]
     pass2: dict[str, set[str]]        # track_id -> pass-2 ticks, the self-agreement ceiling
     empty: set[str]                   # ticked nothing — "fits none"
+    # Answered with the model's own suggestions on screen (2026-09-21 onward).
+    # These CANNOT serve as blind labels in a comparison against that model:
+    # wherever a suggestion was accepted, the label is partly a copy of the
+    # thing being measured, so the model scores against itself.
+    assisted: set[str]
 
 
 def read_labels(gold_ids: set[str]) -> Labels:
@@ -139,9 +144,11 @@ def read_labels(gold_ids: set[str]) -> Labels:
     for d in sorted(rows, key=lambda r: r.get("labeled_at", "")):
         latest[(d["track_id"], int(d.get("pass", 1)))] = d
 
-    ticks, cant, p2, empty = {}, set(), {}, set()
+    ticks, cant, p2, empty, assisted = {}, set(), {}, set(), set()
     for (tid, pas), d in latest.items():
         cats = set(d.get("category_ids") or [])
+        if d.get("assisted"):
+            assisted.add(tid)
         if pas == 2:
             p2[tid] = cats
             continue
@@ -151,7 +158,8 @@ def read_labels(gold_ids: set[str]) -> Labels:
         ticks[tid] = cats
         if not cats:
             empty.add(tid)
-    return Labels(ticks=ticks, cant_judge=cant, pass2=p2, empty=empty)
+    return Labels(ticks=ticks, cant_judge=cant, pass2=p2, empty=empty,
+                  assisted=assisted)
 
 
 # --------------------------------------------------------------------------
@@ -470,7 +478,32 @@ def main() -> None:
     ids = [t for t in g.eligible if t in lab.ticks and t not in lab.cant_judge]
     if not cfg["include_empty_sets"]:
         ids = [t for t in ids if t not in lab.empty]
-    log(f"primary denominator: {len(ids)} songs, {len(set(g.artist_of[t] for t in ids))} artists")
+    # The headline is a BLIND comparison. A row answered with the model's
+    # suggestions visible cannot serve it, so those are split out here rather
+    # than averaged in where nobody would see them.
+    blind = [t for t in ids if t not in lab.assisted]
+    assisted = [t for t in ids if t in lab.assisted]
+    blind_claim = bool(blind)
+    if assisted:
+        log(f"\n  {len(assisted)} of {len(ids)} labelled songs were answered with the "
+            f"model's suggestions on screen.")
+    if not blind:
+        log(
+            "\n  !! NO BLIND ROWS. Every labelled song was answered with the model's own\n"
+            "     ranking visible, so the headline claim in section 2 CANNOT BE MADE from\n"
+            "     this data: wherever a suggestion was accepted the label is partly a copy\n"
+            "     of the model being measured, and it scores against itself. The table below\n"
+            "     is reported for completeness and is NOT a blind comparison. Say that\n"
+            "     plainly wherever these numbers appear."
+        )
+        ids = assisted
+    else:
+        ids = blind
+        if assisted:
+            log(f"  {len(assisted)} assisted rows EXCLUDED from the headline; "
+                f"{len(blind)} blind rows carry it.")
+    log(f"primary denominator: {len(ids)} songs, {len(set(g.artist_of[t] for t in ids))} artists"
+        + ("" if blind_claim else "   [ASSISTED — not a blind comparison]"))
 
     ix = g.index_of()
     truth = [{ix[c] for c in lab.ticks[t]} for t in ids]
@@ -538,7 +571,9 @@ def main() -> None:
         "denominator": {"primary": len(ids), "itt": len(itt_ids),
                         "artists": len(set(artists))},
         "labels": {"pass1": len(lab.ticks), "cant_judge": len(lab.cant_judge),
-                   "empty": len(lab.empty), "pass2": len(lab.pass2)},
+                   "empty": len(lab.empty), "pass2": len(lab.pass2),
+                   "assisted": len(lab.assisted)},
+        "blind_claim": blind_claim,
         "table": table,
     }
     (ART / a.out).write_text(json.dumps(payload, indent=2))

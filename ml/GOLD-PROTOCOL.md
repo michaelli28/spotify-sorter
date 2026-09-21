@@ -142,6 +142,45 @@ the two models. The count of empty sets is reported every time the headline is q
 the primary is also recomputed WITH them included as a robustness line, so the choice is
 visible rather than load-bearing.
 
+## 7b. Assisted labelling — added 2026-09-21, and what it costs
+
+Michael asked to see the model's suggestions while labelling, with an "Accept
+suggestions" button, and confirmed the request after the cost was set out. The `/label`
+page now shows Claude's ranked categories and their scores on the two TRACK queues.
+
+**The cost, stated once, plainly.** A song answered with the model's own ranking on
+screen cannot serve as a blind label in a comparison against that model. Wherever a
+suggestion is accepted, the label is partly a copy of the thing being measured, so the
+model scores against itself. This is not noise — noise widens a confidence interval and
+the bootstrap handles it. This is circularity, and it makes the quantity unmeasurable
+rather than merely uncertain.
+
+**What is done about it, mechanically, not by discipline:**
+
+- Every row carries `assisted: true|false`, set from whether the suggestions were
+  actually on screen for that song. Defaults false, so every row written before
+  2026-09-21 remains correctly marked blind.
+- The page has a per-song **Hide** control. Hiding makes that song blind again — but
+  once they have been displayed for a song, the row stays `assisted` even if hidden
+  before saving, because it cannot be un-seen.
+- `score-gold.py` computes the section 2 headline **from blind rows only**. Assisted
+  rows are excluded from it and reported separately. If there are no blind rows at all,
+  the script refuses to present the result as a blind comparison and prints why.
+- The **pairs** task remains blind absolutely. Score bins are still never served, and a
+  static tripwire plus an integration test both enforce that the pairs queue carries no
+  suggestions, no scores and no bins. A yes/no answer about one named category with that
+  category's score visible would simply be the answer read back.
+- The **relabel** pass (self-agreement ceiling) is assisted too, matching pass 1. Mixing
+  conditions across the two passes would conflate "changed my mind" with "had help the
+  first time". Note the consequence: if suggestions are accepted wholesale on both
+  passes, self-agreement approaches 100% and measures the button, not the judgement.
+
+**What can still be claimed if every gold row ends up assisted:** the ablations remain
+readable against each other (student vs text-only vs artist-average vs prior all face the
+same labels), and section 8 is untouched because it never used labels. What is lost is
+the headline — "the student agrees with Michael's blind labels more often than Claude
+does" — because Claude's agreement is no longer independent of Claude.
+
 ## 8. Third axis — revealed preference (non-blind, secondary, never the headline)
 
 Claude and the student are both judged against Michael's blind labels. The streaming export

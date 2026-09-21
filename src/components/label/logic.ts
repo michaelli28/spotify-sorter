@@ -131,3 +131,58 @@ export function markDone(
     ),
   };
 }
+
+// Bulk "accept all suggestions": the label inputs for every still-unlabeled
+// track in a mode, each one taking the model's suggested categories verbatim.
+//
+// Added 2026-09-21 at Michael's request. A row produced here is `assisted` by
+// definition and is a copy of the model's own answer, so it carries no
+// independent information about that model. Songs with no suggestions are
+// skipped rather than saved empty — an empty tick set means "fits none", which
+// is a real answer and not one anybody gave here.
+export function bulkAcceptInputs(
+  items: readonly {
+    track_id: string;
+    done: boolean;
+    suggestions?: readonly { category_id: string }[];
+  }[],
+  categoryIdsInCacheOrder: readonly string[],
+  opts: {
+    pass: 1 | 2;
+    set: "random" | "gold";
+    definitions_sha256: string;
+    elapsed_ms: number;
+  },
+): TrackBulkInput[] {
+  return items.flatMap((item) => {
+    if (item.done) return [];
+    const wanted = new Set((item.suggestions ?? []).map((s) => s.category_id));
+    if (wanted.size === 0) return [];
+    return [
+      {
+        kind: "track" as const,
+        track_id: item.track_id,
+        pass: opts.pass,
+        set: opts.set,
+        // Cache order, matching a hand-saved row exactly.
+        category_ids: categoryIdsInCacheOrder.filter((id) => wanted.has(id)),
+        cant_judge: false,
+        elapsed_ms: opts.elapsed_ms,
+        definitions_sha256: opts.definitions_sha256,
+        assisted: true,
+      },
+    ];
+  });
+}
+
+export interface TrackBulkInput {
+  kind: "track";
+  track_id: string;
+  pass: 1 | 2;
+  set: "random" | "gold";
+  category_ids: string[];
+  cant_judge: false;
+  elapsed_ms: number;
+  definitions_sha256: string;
+  assisted: true;
+}

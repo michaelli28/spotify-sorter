@@ -18,6 +18,7 @@ import {
   type LabelSample,
   type LabelState,
   type LabelTrack,
+  type Suggestion,
 } from "./schema";
 
 async function readOrNull(path: string): Promise<string | null> {
@@ -113,8 +114,10 @@ export function defineCategories(
   );
 }
 
-// Takes only tracks, artists and categories from the cache, so model output
-// can't reach the page even by accident. Throws DefinitionsError from
+// Takes tracks, artists and categories from the cache. Model output reaches the
+// page ONLY through `suggestions`, which the caller must build and pass
+// explicitly — there is no path by which it arrives here by accident, and the
+// pairs queue never receives it at all. Throws DefinitionsError from
 // parseDefinitions when definitions.md doesn't match the categories.
 export function buildLabelState(
   input: Pick<Cache, "tracks" | "artists" | "categories"> & {
@@ -123,20 +126,29 @@ export function buildLabelState(
     definitions: string;
     definitionsSha: string;
     labels: readonly LabelRow[];
+    // track_id -> the model's ranked suggestions. Omit for a blind page.
+    suggestions?: Readonly<Record<string, readonly Suggestion[]>>;
   },
 ): LabelState {
-  const { tracks, artists, categories, sample, labels } = input;
+  const { tracks, artists, categories, sample, labels, suggestions } = input;
 
-  const labelTrack = (track_id: string): LabelTrack => {
+  // Blind by DEFAULT: a caller must ask for suggestions. The pairs queue shares
+  // this helper, and a yes/no answer about one named category with the model's
+  // score for that category on screen is not an answer at all — so the opt-in
+  // sits at the call site, where it is visible, rather than being inherited.
+  const labelTrack = (track_id: string, assisted = false): LabelTrack => {
     const track = tracks[track_id];
     if (!track)
       throw new Error(`Sampled track ${track_id} is not in the cache`);
     const artist = artists[track.artist_id];
+    const suggested = assisted ? suggestions?.[track_id] : undefined;
     return {
       track_id,
       title: track.title,
       artist_name: artist?.name ?? "",
       genres: artist?.genres ?? [],
+      // Spread so the key is absent rather than undefined when not offered.
+      ...(suggested ? { suggestions: suggested } : {}),
     };
   };
 
@@ -157,11 +169,11 @@ export function buildLabelState(
     definitions_sha256: input.definitionsSha,
     categories: defineCategories(input.definitions, categories),
     random: sample.random_track_ids.map((id) => ({
-      ...labelTrack(id),
+      ...labelTrack(id, true),
       done: pass1Done.has(id),
     })),
     gold: (input.gold?.track_ids ?? []).map((id) => ({
-      ...labelTrack(id),
+      ...labelTrack(id, true),
       done: pass1Done.has(id),
     })),
     pairs: sample.pairs.map((p) => {
@@ -177,8 +189,13 @@ export function buildLabelState(
         done: pairsDone.has(p.pair_id),
       };
     }),
+    // Assisted too, matching pass 1. If one pass saw the suggestions and the
+    // other did not, their disagreement would conflate "changed my mind" with
+    // "had help the first time", and the self-agreement ceiling would stop
+    // meaning anything. The same condition on both passes is the only readable
+    // option once pass 1 is assisted.
     relabel: sample.relabel_track_ids.map((id) => ({
-      ...labelTrack(id),
+      ...labelTrack(id, true),
       done: pass2Done.has(id),
       opens_at: opensAt.get(id) ?? null,
     })),

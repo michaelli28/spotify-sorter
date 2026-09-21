@@ -216,6 +216,8 @@ describe("GET /api/label", () => {
     expect(body.categories[0].definition).toBe(
       "**In:** hazy.\n**Out:** Shoegaze is louder.",
     );
+    // suggestions are asserted by shape here; their contents have their own
+    // tests, and pinning fixture scores in this one would just make it brittle.
     expect(body.random).toEqual([
       {
         track_id: "t_b",
@@ -223,6 +225,7 @@ describe("GET /api/label", () => {
         artist_name: "Artist Two",
         genres: ["lo-fi beats"],
         done: false,
+        suggestions: expect.any(Array),
       },
       {
         track_id: "t_a",
@@ -230,6 +233,7 @@ describe("GET /api/label", () => {
         artist_name: "Artist One",
         genres: ["shoegaze"],
         done: true,
+        suggestions: expect.any(Array),
       },
     ]);
     expect(body.pairs.map((p: { pair_id: string }) => p.pair_id)).toEqual([
@@ -251,19 +255,37 @@ describe("GET /api/label", () => {
     ]);
   });
 
-  it("carries no model output: no score keys and no score values", async () => {
+  // Since 2026-09-21 the TRACK queues carry the model's suggestions, by
+  // request. This test now pins where that stops: the pairs queue, and the
+  // sample design, stay blind.
+  it("keeps the pairs queue blind while the track queues carry suggestions", async () => {
+    await seed({ labels: [pass1Row("t_a", T0)] });
+    const body = (await (await GET()).json()) as {
+      random: Array<{ suggestions?: unknown }>;
+      pairs: unknown[];
+    };
+    expect(body.random[0]!.suggestions).toBeDefined();
+
+    const keys = new Set<string>();
+    walk(body.pairs, (k) => {
+      if (k !== null) keys.add(k);
+    });
+    for (const banned of ["suggestions", "score", "matches", "rank", "bin"])
+      expect(keys.has(banned)).toBe(false);
+    expect(JSON.stringify(body.pairs)).not.toMatch(
+      /"(suggestions|score|matches|rank|bin)"/,
+    );
+  });
+
+  it("never serves the sample design's score bins anywhere", async () => {
     await seed({ labels: [pass1Row("t_a", T0)] });
     const body: unknown = await (await GET()).json();
     const keys = new Set<string>();
-    const numbers: number[] = [];
-    walk(body, (k, v) => {
+    walk(body, (k) => {
       if (k !== null) keys.add(k);
-      if (typeof v === "number") numbers.push(v);
     });
-    for (const banned of ["score", "matches", "rank", "bin", "assignments"])
+    for (const banned of ["bin", "bin_id", "inclusion_prob", "population_pairs"])
       expect(keys.has(banned)).toBe(false);
-    for (const s of SCORES) expect(numbers).not.toContain(s);
-    expect(JSON.stringify(body)).not.toMatch(/"(score|matches|rank|bin)"/);
   });
 
   it("404s with no_sample when sample.json is missing", async () => {
@@ -308,10 +330,13 @@ describe("POST /api/label", () => {
     expect(lines).toHaveLength(1);
     const row = lines[0] as Record<string, unknown>;
     expect(LabelRowSchema.safeParse(row).success).toBe(true);
-    // "set" is defaulted by the schema when the page leaves it out.
+    // "set" and "assisted" are defaulted by the schema when the page leaves
+    // them out. "assisted" defaulting to false is what keeps every row written
+    // before the suggestions existed correctly marked as blind.
     expect(Object.keys(row).sort()).toEqual(
-      [...Object.keys(trackInput()), "set", "labeled_at"].sort(),
+      [...Object.keys(trackInput()), "set", "assisted", "labeled_at"].sort(),
     );
+    expect(row.assisted).toBe(false);
     expect(row).toMatchObject(trackInput());
     const at = Date.parse(row.labeled_at as string);
     expect(at).toBeGreaterThanOrEqual(before);
@@ -533,8 +558,9 @@ describe("the gold set", () => {
       "t_c",
       "t_d",
     ]);
-    // Same blind shape as the other lists: no score reaches the page.
-    expect(JSON.stringify(state.gold)).not.toMatch(/score|matches|rank|bin/);
+    // Assisted since 2026-09-21: the gold queue carries the model's ranked
+    // suggestions, which is exactly what makes these rows non-blind.
+    expect(state.gold[0].suggestions?.length).toBeGreaterThan(0);
 
     const res = await POST(
       post(trackInput({ track_id: "t_c", set: "gold" })),

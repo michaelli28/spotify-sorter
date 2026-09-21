@@ -24,14 +24,39 @@ import {
   type LabelRow,
   type GoldSample,
   type LabelSample,
+  type Suggestion,
 } from "@/src/lib/labeling/schema";
 
 export const dynamic = "force-dynamic";
 
-// Serves the blind labeling page. Only tracks, artists and categories leave
-// the cache here; the sample's design file (score bins) is never read.
+// Serves the labeling page.
+//
+// The TRACK queues are assisted: on 2026-09-21 Michael asked to see the model's
+// suggestions while labeling, having been told what it costs — a track answered
+// with the model's own ranking on screen cannot then serve as a blind label in
+// the comparison against that model. Those rows are stamped `assisted: true`.
+//
+// The PAIRS queue stays blind and this is not negotiable: the sample's design
+// file (score bins) is still never read here, because a pair answer is
+// worthless if the bin it was drawn from was visible.
 
 const cachePath = () => join(dataDir(), "cache.json");
+
+// The model's ranked categories per track, best first, straight out of the
+// classification run. Only categories still present in the cache survive, so a
+// renamed or deleted category cannot put an unresolvable id on the page.
+function trackSuggestions(
+  cache: Pick<Cache, "assignments" | "categories">,
+): Record<string, Suggestion[]> {
+  const out: Record<string, Suggestion[]> = {};
+  for (const [track_id, a] of Object.entries(cache.assignments ?? {})) {
+    const picks = (a?.matches ?? [])
+      .filter((m) => cache.categories[m.category_id])
+      .map((m) => ({ category_id: m.category_id, score: m.score }));
+    if (picks.length) out[track_id] = picks;
+  }
+  return out;
+}
 
 function fail(status: number, error: string, message?: string) {
   return NextResponse.json(message ? { error, message } : { error }, {
@@ -44,7 +69,8 @@ export async function GET() {
   if (!sample) return fail(404, "no_sample");
   const definitions = await readDefinitionsFile();
   if (definitions === null) return fail(404, "no_definitions");
-  const { tracks, artists, categories } = await readCache(cachePath());
+  const cache = await readCache(cachePath());
+  const { tracks, artists, categories } = cache;
   const labels = await readLabels();
   try {
     return NextResponse.json(
@@ -57,6 +83,7 @@ export async function GET() {
         definitions,
         definitionsSha: definitionsSha256(definitions),
         labels,
+        suggestions: trackSuggestions(cache),
       }),
     );
   } catch (err) {

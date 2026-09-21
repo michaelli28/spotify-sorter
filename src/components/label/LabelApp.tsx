@@ -10,6 +10,7 @@ import { loadLabelState, postLabel } from "./api";
 import { FOCUS_RING } from "./focus";
 import {
   MODES,
+  bulkAcceptInputs,
   categoryOrder,
   earliestOpening,
   firstUnfinishedMode,
@@ -56,6 +57,11 @@ export function LabelApp() {
   const [now, setNow] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bulk accept: null = idle, "confirm" = asking, {done,total} = running.
+  // Deliberately NOT a window.confirm — a modal dialog blocks the page.
+  const [bulk, setBulk] = useState<
+    null | "confirm" | { done: number; total: number }
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +114,42 @@ export function LabelApp() {
     setNow(t);
     const after = nextIndex(itemsFor(next, mode), index, t);
     setCursor((c) => ({ ...c, [mode]: after === -1 ? undefined : after }));
+  }
+
+  // Saves the model's suggestion as the answer for every remaining song in this
+  // mode. Sequential on purpose: appendLabel serialises writes anyway, and one
+  // request at a time means a mid-run failure stops with an exact count rather
+  // than leaving an unknown number in flight.
+  async function acceptAll() {
+    if (mode === "pairs") return;
+    const inputs = bulkAcceptInputs(
+      itemsFor(state, mode) as Parameters<typeof bulkAcceptInputs>[0],
+      state.categories.map((c) => c.id),
+      {
+        pass: mode === "relabel" ? 2 : 1,
+        set: mode === "gold" ? "gold" : "random",
+        definitions_sha256: state.definitions_sha256,
+        elapsed_ms: 0,
+      },
+    );
+    setError(null);
+    setBulk({ done: 0, total: inputs.length });
+    for (const [i, input] of inputs.entries()) {
+      const r = await postLabel(input);
+      if (!r.ok) {
+        setError(`Stopped after ${i} of ${inputs.length}: ${r.message}`);
+        setBulk(null);
+        break;
+      }
+      setBulk({ done: i + 1, total: inputs.length });
+    }
+    // Re-read rather than patching locally: this touched most of the queue.
+    const reloaded = await loadLabelState();
+    if (reloaded.ok) {
+      setLoad({ kind: "ready", state: reloaded.value });
+      setCursor((c) => ({ ...c, [mode]: undefined }));
+    }
+    setBulk(null);
   }
 
   // From the finished/locked line (-1), Back reaches the last open item.
@@ -191,6 +233,7 @@ export function LabelApp() {
         <TrackLabeler
           key={key}
           categories={categoryOrder(state.categories, track.track_id, pass)}
+          suggestions={track.suggestions}
           prefill={session[key]}
           busy={busy}
           error={error}
@@ -212,6 +255,7 @@ export function LabelApp() {
                   .filter((id) => a.category_ids.includes(id)),
                 cant_judge: a.cant_judge,
                 elapsed_ms: a.elapsed_ms,
+                assisted: a.assisted,
                 definitions_sha256: state.definitions_sha256,
               },
               track.track_id,
@@ -249,8 +293,56 @@ export function LabelApp() {
             </button>
           ))}
         </nav>
+        {mode !== "pairs" && items.some((i) => !i.done) && (
+          <div className="ml-auto flex items-baseline gap-4">
+            {bulk === null && (
+              <button
+                type="button"
+                onClick={() => setBulk("confirm")}
+                className={`text-sm text-[var(--color-text-tertiary)] underline hover:text-[var(--color-text-secondary)] ${FOCUS_RING}`}
+              >
+                Accept all suggestions
+              </button>
+            )}
+            {bulk === "confirm" && (
+              <>
+                <span className="text-sm text-[var(--color-text-secondary)]">
+                  Save the model&apos;s answer for the{" "}
+                  {items.filter((i) => !i.done).length} remaining?
+                </span>
+                <Button
+                  variant="ghost"
+                  onClick={acceptAll}
+                  className={FOCUS_RING}
+                >
+                  Accept all
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setBulk(null)}
+                  className={`text-sm underline text-[var(--color-text-tertiary)] ${FOCUS_RING}`}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {typeof bulk === "object" && bulk !== null && (
+              <span
+                aria-live="polite"
+                className="font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-secondary)]"
+              >
+                {bulk.done} / {bulk.total}
+              </span>
+            )}
+          </div>
+        )}
         {items.length > 0 && (
-          <span className="ml-auto font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]">
+          <span
+            className={clsx(
+              "font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]",
+              mode === "pairs" || !items.some((i) => !i.done) ? "ml-auto" : "",
+            )}
+          >
             {doneCount} / {items.length}
           </span>
         )}
