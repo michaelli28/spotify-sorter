@@ -176,15 +176,25 @@ async function toRow(
 ): Promise<LabelRow | Response> {
   const labeled_at = new Date().toISOString();
 
-  // `assisted` may ratchet UP but never down. The client flag is per-mount: a
-  // song revisited with Back, after the suggestions were hidden, resubmits as
-  // blind even though they were on screen the first time. Analysis takes the
-  // LATEST row per item, so that false-blind row would erase the honest mark
-  // and put a label copied from the model back into the blind denominator.
-  // Enforced here rather than in the component so it survives a reload, a
-  // second tab, and any future client.
-  const assistedBefore = async (match: (r: LabelRow) => boolean) =>
-    (await readLabels()).some((r) => match(r) && r.assisted === true);
+  // Two different facts, and collapsing them cost a whole relabelling pass.
+  //
+  //   assisted        the guesses were ON SCREEN as this answer was given, so
+  //                   the answer may simply be a copy of them. Circular.
+  //   prior_exposure  this item was seen with the guesses at SOME point. A
+  //                   later answer with them hidden is a real judgement that
+  //                   may still be anchored. Biased, not circular.
+  //
+  // An earlier ratchet forced `assisted` up whenever any previous row for the
+  // item was assisted. That was right about "it cannot be un-seen" and wrong in
+  // consequence: it made relabelling incapable of ever producing a usable row,
+  // so the only recovery path was blocked by the thing meant to protect it.
+  // `assisted` is now left as the client reports it — the page tracks it across
+  // remounts — and exposure is derived here from history, where only the server
+  // can know it.
+  const exposedBefore = async (match: (r: LabelRow) => boolean) =>
+    (await readLabels()).some(
+      (r) => match(r) && (r.assisted === true || r.prior_exposure === true),
+    );
 
   if (input.kind === "pair") {
     const pair = sample.pairs.find((p) => p.pair_id === input.pair_id);
@@ -196,12 +206,12 @@ async function toRow(
         "unknown_category",
         `Unknown category ${pair.category_id}`,
       );
-    const wasAssisted = await assistedBefore(
+    const exposed = await exposedBefore(
       (r) => r.kind === "pair" && r.pair_id === input.pair_id,
     );
     return {
       ...input,
-      assisted: input.assisted || wasAssisted,
+      prior_exposure: input.prior_exposure || exposed,
       track_id: pair.track_id,
       category_id: pair.category_id,
       labeled_at,
@@ -236,11 +246,15 @@ async function toRow(
     if (!opensAt || Date.parse(opensAt) > Date.now())
       return fail(403, "relabel_not_open");
   }
-  const wasAssisted = await assistedBefore(
+  const exposed = await exposedBefore(
     (r) =>
       r.kind === "track" &&
       r.track_id === input.track_id &&
       r.pass === input.pass,
   );
-  return { ...input, assisted: input.assisted || wasAssisted, labeled_at };
+  return {
+    ...input,
+    prior_exposure: input.prior_exposure || exposed,
+    labeled_at,
+  };
 }

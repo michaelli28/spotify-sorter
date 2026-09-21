@@ -130,7 +130,8 @@ class Labels:
     # These CANNOT serve as blind labels in a comparison against that model:
     # wherever a suggestion was accepted, the label is partly a copy of the
     # thing being measured, so the model scores against itself.
-    assisted: set[str]          # pass-1 assistance — what the headline depends on
+    assisted: set[str]          # guesses ON SCREEN at answer time — circular
+    exposed: set[str]           # guesses seen at SOME point, then hidden — biased
     assisted_p2: set[str]       # pass-2 assistance, reported with the ceiling
     cant_judge_p2: set[str]     # a pass-2 "can't judge" is not an empty tick set
 
@@ -152,7 +153,7 @@ def read_labels(gold_ids: set[str]) -> Labels:
         latest[(d["track_id"], int(d.get("pass", 1)))] = d
 
     ticks, cant, p2, empty = {}, set(), {}, set()
-    assisted, assisted_p2, cj2 = set(), set(), set()
+    assisted, assisted_p2, cj2, exposed = set(), set(), set(), set()
     for (tid, pas), d in latest.items():
         cats = set(d.get("category_ids") or [])
         if pas == 2:
@@ -168,6 +169,8 @@ def read_labels(gold_ids: set[str]) -> Labels:
             continue
         if d.get("assisted"):
             assisted.add(tid)
+        if d.get("prior_exposure"):
+            exposed.add(tid)
         if d.get("cant_judge"):
             cant.add(tid)
             continue
@@ -175,7 +178,8 @@ def read_labels(gold_ids: set[str]) -> Labels:
         if not cats:
             empty.add(tid)
     return Labels(ticks=ticks, cant_judge=cant, pass2=p2, empty=empty,
-                  assisted=assisted, assisted_p2=assisted_p2, cant_judge_p2=cj2)
+                  assisted=assisted, exposed=exposed,
+                  assisted_p2=assisted_p2, cant_judge_p2=cj2)
 
 
 # --------------------------------------------------------------------------
@@ -517,15 +521,24 @@ def main() -> None:
     # The headline is a BLIND comparison. A row answered with the model's
     # suggestions visible cannot serve it, so those are split out here rather
     # than averaged in where nobody would see them.
-    blind = [t for t in ids if t not in lab.assisted]
+    # Three tiers, not two. A song answered with the guesses hidden is a real
+    # judgement even if they were shown for it earlier — anchored, but not a
+    # copy. Collapsing that into "assisted" is what made relabelling pointless.
+    virgin = [t for t in ids if t not in lab.assisted and t not in lab.exposed]
+    reblind = [t for t in ids if t not in lab.assisted and t in lab.exposed]
+    blind = virgin + reblind
     assisted = [t for t in ids if t in lab.assisted]
     n_blind_artists = len({g.artist_of[t] for t in blind})
     blind_claim = (
         len(blind) >= MIN_BLIND_SONGS and n_blind_artists >= MIN_BLIND_ARTISTS
     )
-    if assisted:
-        log(f"\n  {len(assisted)} of {len(ids)} labelled songs were answered with the "
-            f"model's suggestions on screen.")
+    log(f"\n  tiers: {len(virgin)} never-exposed | {len(reblind)} relabelled after "
+        f"exposure | {len(assisted)} answered with the guesses on screen")
+    if reblind and not virgin:
+        log("  The headline therefore rests on RELABELLED rows: answered with the model's\n"
+            "  guesses hidden, but for songs whose guesses were shown earlier. That is a\n"
+            "  real judgement that may still be anchored — weaker than a never-exposed\n"
+            "  study, stronger than nothing. Say 'relabelled blind', not 'blind'.")
     if blind and not blind_claim:
         log(
             f"\n  !! ONLY {len(blind)} BLIND SONG(S) ACROSS {n_blind_artists} ARTIST(S), need "
@@ -709,6 +722,7 @@ def main() -> None:
         "volume_matched": volume_rows,
         "itt_table": itt_table,
         "blind": {"songs": len(blind), "artists": n_blind_artists,
+                  "never_exposed": len(virgin), "relabelled_after_exposure": len(reblind),
                   "min_songs": MIN_BLIND_SONGS, "min_artists": MIN_BLIND_ARTISTS},
     }
     (ART / a.out).write_text(json.dumps(payload, indent=2))

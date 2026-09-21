@@ -178,6 +178,7 @@ export function bulkAcceptInputs(
         elapsed_ms: opts.elapsed_ms,
         definitions_sha256: opts.definitions_sha256,
         assisted: true,
+        prior_exposure: false,
       },
     ];
   });
@@ -193,6 +194,9 @@ export interface TrackBulkInput {
   elapsed_ms: number;
   definitions_sha256: string;
   assisted: true;
+  // Server-derived; the client never knows the history. Sent false and
+  // overwritten by the route.
+  prior_exposure: false;
 }
 
 // Bulk "accept all suggestions" for the pairs queue: the model's own verdict as
@@ -220,6 +224,7 @@ export function bulkAcceptPairInputs(
             elapsed_ms: opts.elapsed_ms,
             definitions_sha256: opts.definitions_sha256,
             assisted: true as const,
+            prior_exposure: false as const,
           },
         ],
   );
@@ -232,4 +237,7 @@ export interface PairBulkInput {
   elapsed_ms: number;
   definitions_sha256: string;
   assisted: true;
+  // Server-derived; the client never knows the history. Sent false and
+  // overwritten by the route.
+  prior_exposure: false;
 }

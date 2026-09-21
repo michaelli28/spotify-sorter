@@ -234,6 +234,8 @@ export function LabelApp() {
                   elapsed_ms,
                   definitions_sha256: state.definitions_sha256,
                   assisted,
+                  // Server-derived from history; sent false and overwritten.
+                  prior_exposure: false,
                 },
                 pair.pair_id,
               )
@@ -288,6 +290,7 @@ export function LabelApp() {
                 cant_judge: a.cant_judge,
                 elapsed_ms: a.elapsed_ms,
                 assisted: a.assisted,
+                prior_exposure: false,
                 definitions_sha256: state.definitions_sha256,
               },
               track.track_id,

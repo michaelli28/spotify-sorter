@@ -141,10 +141,17 @@ export const TrackLabelInputSchema = z
     // Which pre-registered draw the song came from. Rows written before the
     // gold draw existed carry no field, so they default to the first sample.
     set: z.enum(["random", "gold"]).default("random"),
-    // True when the model's suggestions were on screen as this was answered.
+    // True when the model's suggestions were ON SCREEN as this was answered.
     // Defaults false so every row written before 2026-09-21 stays blind, which
     // is what they were.
     assisted: z.boolean().default(false),
+    // Set by the SERVER, never the client: has this item ever been answered or
+    // displayed with the model's guesses visible before? A song relabelled
+    // later with them hidden is a real judgement, but not an independent one —
+    // the labeller saw the answer once and may remember it. Biased, not
+    // circular, and the distinction is the difference between a weaker claim
+    // and no claim at all.
+    prior_exposure: z.boolean().default(false),
   })
   .refine((l) => !l.cant_judge || l.category_ids.length === 0, {
     message: "cant_judge labels carry no categories",
@@ -165,6 +172,13 @@ export const PairLabelInputSchema = z.object({
   // was stratified by score bin to measure calibration, and an answer given
   // with the score visible measures the threshold, not the judgement.
   assisted: z.boolean().default(false),
+    // Set by the SERVER, never the client: has this item ever been answered or
+    // displayed with the model's guesses visible before? A song relabelled
+    // later with them hidden is a real judgement, but not an independent one —
+    // the labeller saw the answer once and may remember it. Biased, not
+    // circular, and the distinction is the difference between a weaker claim
+    // and no claim at all.
+    prior_exposure: z.boolean().default(false),
 });
 
 export const LabelInputSchema = z.union([

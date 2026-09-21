@@ -43,6 +43,7 @@ function trackRow(over: Partial<LabelRow> = {}): LabelRow {
     definitions_sha256: SHA,
     set: "random",
     assisted: false,
+    prior_exposure: false,
     labeled_at: T0,
     ...over,
   } as LabelRow;
@@ -58,6 +59,7 @@ function pairRow(over: Partial<LabelRow> = {}): LabelRow {
     track_id: "t_c",
     category_id: "c_rock",
     assisted: false,
+    prior_exposure: false,
     labeled_at: T0,
     ...over,
   } as LabelRow;

@@ -292,21 +292,28 @@ describe("GET /api/label", () => {
       expect(keys.has(banned)).toBe(false);
   });
 
-  it("ratchets assisted up and never back down", async () => {
-    // The client flag is per-mount, so navigating Back to a song after hiding
-    // the suggestions resubmits it as blind even though they were displayed.
-    // Latest-row-wins in the analysis means that false-blind row would ERASE
-    // the honest one, so the server refuses the downgrade. Assisted may only
-    // ratchet up.
+  it("a later blind answer is recorded blind, but marked previously exposed", async () => {
+    // `assisted` and `prior_exposure` are different facts. Copied means the
+    // ticks ARE the model's output, which is circular. Previously exposed means
+    // the labeller saw the model's answer at some earlier point and then judged
+    // with it hidden — biased, but a real judgement, and the strongest claim
+    // still available once suggestions have been shown.
     await seed();
-    const first = await POST(post(trackInput({ assisted: true })));
-    expect(first.status).toBe(200);
-    const second = await POST(post(trackInput({ assisted: false })));
-    expect(second.status).toBe(200);
+    await POST(post(trackInput({ assisted: true })));
+    await POST(post(trackInput({ assisted: false })));
 
     const rows = (await writtenLines()) as Array<Record<string, unknown>>;
-    expect(rows).toHaveLength(2);
-    expect(rows[1]!.assisted).toBe(true);
+    expect(rows[0]).toMatchObject({ assisted: true, prior_exposure: false });
+    expect(rows[1]).toMatchObject({ assisted: false, prior_exposure: true });
+  });
+
+  it("never lets a blind song acquire prior exposure it did not have", async () => {
+    await seed();
+    await POST(post(trackInput({ assisted: false })));
+    await POST(post(trackInput({ assisted: false })));
+    const rows = (await writtenLines()) as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.prior_exposure)).toEqual([false, false]);
+    expect(rows.map((r) => r.assisted)).toEqual([false, false]);
   });
 
   it("leaves a genuinely blind song blind across repeated saves", async () => {
@@ -317,7 +324,7 @@ describe("GET /api/label", () => {
     expect(rows.map((r) => r.assisted)).toEqual([false, false]);
   });
 
-  it("ratchets pairs too, keyed by pair_id", async () => {
+  it("marks a pair previously exposed without forcing it back to assisted", async () => {
     await seed();
     const mk = (assisted: boolean) =>
       post({
@@ -331,7 +338,7 @@ describe("GET /api/label", () => {
     await POST(mk(true));
     await POST(mk(false));
     const rows = (await writtenLines()) as Array<Record<string, unknown>>;
-    expect(rows[1]!.assisted).toBe(true);
+    expect(rows[1]).toMatchObject({ assisted: false, prior_exposure: true });
   });
 
   it("404s with no_sample when sample.json is missing", async () => {
@@ -380,7 +387,7 @@ describe("POST /api/label", () => {
     // them out. "assisted" defaulting to false is what keeps every row written
     // before the suggestions existed correctly marked as blind.
     expect(Object.keys(row).sort()).toEqual(
-      [...Object.keys(trackInput()), "set", "assisted", "labeled_at"].sort(),
+      [...Object.keys(trackInput()), "set", "assisted", "prior_exposure", "labeled_at"].sort(),
     );
     expect(row.assisted).toBe(false);
     expect(row).toMatchObject(trackInput());
@@ -438,6 +445,7 @@ describe("POST /api/label", () => {
         "category_id",
         "labeled_at",
         "assisted",
+        "prior_exposure",
       ].sort(),
     );
   });
