@@ -6,10 +6,12 @@ headline claim — that needs Michael's blind labels and lives in Phase 3. A hig
 number here means the audio carries the teacher's signal; it does not mean the
 student is right, because the teacher is often wrong.
 
-THE CEILING MATTERS MORE THAN THE SCORE. Claude classified 119 recordings twice
-and agreed with its own top-1 only 60.5% of the time. No student can exceed that
-by imitation, so every number below is printed next to it. A student at 40% has
-covered two thirds of the reproducible signal, not 40% of the truth.
+THE TEACHER'S NOISE IS THE REFERENCE, NOT 100%. Claude classified 116 recordings
+twice (119 pairs; three recordings carry three track ids) and its top-1 agreed
+with itself only 60.5% of the time. That is a FLOOR on what imitation can reach,
+not a ceiling: two draws agree at sum(p^2), while the best fixed guess scores
+max(p) >= sum(p^2), so a student can in principle beat it. It is printed next to
+every number so a score is read against the teacher's noise.
 
 THE LAYER SOFTMAX. MERT hands back one vector per transformer layer (13 for v1,
 24 for v2). Different layers carry different things — lower layers sit closer to
@@ -156,8 +158,7 @@ def run_fold(
     Regularisation is the whole game here, not a detail. 41 categories, ~1,750
     training rows and up to 2,816 features means an unregularised probe reaches
     50% on train while FALLING below the majority-class baseline on held-out
-    artists. Measured on this data: MERT-v2 goes 27.6% -> 37.3% top-1 as weight
-    decay rises from 0.001 to 20.
+    artists.
     """
     xs_tr, xs_va, xs_te, specs = {}, {}, {}, []
     for b in blocks:
@@ -278,7 +279,7 @@ def main() -> None:
     print(f"device {device} | {len(ds.isrc)} recordings | {len(set(ds.groups))} artists")
     print("fold sizes:", [int((folds == f).sum()) for f in range(args.folds)])
     print(
-        f"\nTEACHER CEILING (same recording, classified twice, n={ceiling['pairs']}): "
+        f"\nTEACHER SELF-AGREEMENT, a floor not a ceiling (n={ceiling['pairs']} pairs): "
         f"top-1 identical {ceiling['top1_identical']*100:.1f}%, "
         f"top-1 in other's top-3 {ceiling['top1_in_other_top3']*100:.1f}%"
     )

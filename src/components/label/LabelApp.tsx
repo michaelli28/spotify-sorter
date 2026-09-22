@@ -65,8 +65,8 @@ export function LabelApp() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   // Which items have had the guesses on screen this session. The per-item
   // components remount on every Back, so their own ref forgets; this does not.
-  // The server ratchets too, which is the durable guarantee — this keeps the
-  // request body honest rather than relying on the server to correct it.
+  // The server no longer corrects `assisted` (it only derives `prior_exposure`
+  // from history), so this set is what keeps the request body honest.
   const seen = useRef<Set<string>>(new Set());
   const markSeen = (id: string) => seen.current.add(id);
   const [bulk, setBulk] = useState<

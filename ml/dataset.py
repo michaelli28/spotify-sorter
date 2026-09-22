@@ -2,20 +2,22 @@
 
 Three things here exist to stop a number being better than it deserves.
 
-ONE ROW PER RECORDING, NOT PER TRACK. 124 ISRCs carry two Spotify track ids
-(single vs album). They are the same audio, so keeping both would put identical
-features on both sides of a fold boundary. A representative track is chosen by
-sorted id, deterministically, and the discarded twin is kept aside as a free
-teacher-noise measurement: Claude classified the same recording twice, under two
-different titles, so how often it agrees with itself there is an upper bound on
-what any student can reproduce.
+ONE ROW PER RECORDING, NOT PER TRACK. 116 ISRCs carry more than one Spotify
+track id (113 carry two, 3 carry three: single vs album). They are the same
+audio, so keeping both would put identical features on both sides of a fold
+boundary. A representative track is chosen by sorted id, deterministically, and
+each discarded twin is kept aside as a free teacher-noise measurement: Claude
+classified the same recording twice, under the identical title in 106 of the 119
+pairs, in a different request. How often it agrees with itself there measures
+how noisy the target is. It is a floor on achievable agreement, not an upper
+bound (see teacher_self_agreement).
 
 TARGETS ARE THE ORDER, NOT THE SCORES. Each assignment is exactly 5 matches,
-already descending (verified). Only the ordering is used; the 65-80 score bunching
-is discarded, and a category outside the top 5 is "ranked lower", never a zero.
+already descending (verified). Only the ordering is used; the scores are
+discarded, and a category outside the top 5 is "ranked lower", never a zero.
 
 GROUPS ARE ARTISTS. Returned alongside the features so every split can be grouped.
-884 of 1,402 artists have exactly one song, so folds are lumpy by construction and
+858 of 1,332 artists have exactly one song, so folds are lumpy by construction and
 their sizes get reported rather than assumed even.
 """
 
@@ -133,10 +135,10 @@ def _text_block(isrc: np.ndarray) -> dict[str, np.ndarray]:
 def grouped_folds(groups: np.ndarray, k: int = 5, seed: int = 0) -> np.ndarray:
     """Group k-fold: every song by one artist lands in the same fold.
 
-    Without this the model can memorise an artist (the biggest here has 27 songs)
+    Without this the model can memorise an artist (the biggest here has 22 songs)
     and score well while learning nothing about sound. Assignment is greedy —
-    largest artist first into whichever fold is currently smallest — because 884
-    of 1,402 artists have a single song and random assignment makes lumpier folds.
+    largest artist first into whichever fold is currently smallest — because 858
+    of 1,332 artists have a single song and random assignment makes lumpier folds.
     """
     rng = np.random.default_rng(seed)
     uniq, counts = np.unique(groups, return_counts=True)
@@ -151,11 +153,13 @@ def grouped_folds(groups: np.ndarray, k: int = 5, seed: int = 0) -> np.ndarray:
 
 
 def teacher_self_agreement(ds: Dataset) -> dict[str, float]:
-    """Claude classified 119 recordings twice, under two different track ids.
+    """Claude classified 116 recordings twice (119 pairs), under two track ids.
 
     Same audio, same 41 categories, a different row in the request — so this is a
-    direct read on how much of the teacher's signal is reproducible at all. It is
-    the ceiling any student is chasing, and it costs nothing to compute.
+    direct read on how noisy the teacher is, and it costs nothing to compute. It
+    is a FLOOR on achievable agreement, not a ceiling: two draws agree at sum(p^2)
+    and the best fixed guess scores max(p) >= sum(p^2). top1_in_other_top3 is
+    one-way (representative's top-1 in the twin's top-3), not symmetric.
     """
     cache = json.loads((DATA / "cache.json").read_text())
     cat_ids = sorted(cache["categories"].keys())
