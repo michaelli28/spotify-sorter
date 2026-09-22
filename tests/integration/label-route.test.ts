@@ -288,7 +288,12 @@ describe("GET /api/label", () => {
     walk(body, (k) => {
       if (k !== null) keys.add(k);
     });
-    for (const banned of ["bin", "bin_id", "inclusion_prob", "population_pairs"])
+    for (const banned of [
+      "bin",
+      "bin_id",
+      "inclusion_prob",
+      "population_pairs",
+    ])
       expect(keys.has(banned)).toBe(false);
   });
 
@@ -387,7 +392,13 @@ describe("POST /api/label", () => {
     // them out. "assisted" defaulting to false is what keeps every row written
     // before the suggestions existed correctly marked as blind.
     expect(Object.keys(row).sort()).toEqual(
-      [...Object.keys(trackInput()), "set", "assisted", "prior_exposure", "labeled_at"].sort(),
+      [
+        ...Object.keys(trackInput()),
+        "set",
+        "assisted",
+        "prior_exposure",
+        "labeled_at",
+      ].sort(),
     );
     expect(row.assisted).toBe(false);
     expect(row).toMatchObject(trackInput());
@@ -597,6 +608,35 @@ describe("POST /api/label", () => {
       expect(lines).toHaveLength(3);
       expect(lines[2]).toMatchObject({ track_id: "t_a", pass: 2 });
     });
+
+    // Exposure is a fact about the song, not the pass: a relabel of a song
+    // first answered with the guesses on screen has seen them.
+    it("marks a relabel previously exposed when pass 1 was assisted", async () => {
+      await seed({
+        labels: [{ ...pass1Row("t_a", hoursAgo(49)), assisted: true }],
+      });
+      const res = await POST(
+        post(trackInput({ track_id: "t_a", pass: 2, assisted: false })),
+      );
+      expect(res.status).toBe(200);
+      const lines = (await writtenLines()) as Array<Record<string, unknown>>;
+      expect(lines[1]).toMatchObject({
+        pass: 2,
+        assisted: false,
+        prior_exposure: true,
+      });
+    });
+
+    it("leaves a relabel unexposed when pass 1 was blind", async () => {
+      await seed({
+        labels: [{ ...pass1Row("t_a", hoursAgo(49)), assisted: false }],
+      });
+      await POST(
+        post(trackInput({ track_id: "t_a", pass: 2, assisted: false })),
+      );
+      const lines = (await writtenLines()) as Array<Record<string, unknown>>;
+      expect(lines[1]).toMatchObject({ pass: 2, prior_exposure: false });
+    });
   });
 });
 
@@ -617,9 +657,7 @@ describe("the gold set", () => {
     // suggestions, which is exactly what makes these rows non-blind.
     expect(state.gold[0].suggestions?.length).toBeGreaterThan(0);
 
-    const res = await POST(
-      post(trackInput({ track_id: "t_c", set: "gold" })),
-    );
+    const res = await POST(post(trackInput({ track_id: "t_c", set: "gold" })));
     expect(res.status).toBe(200);
     const [row] = (await writtenLines()) as Array<Record<string, unknown>>;
     expect(row).toMatchObject({ track_id: "t_c", set: "gold", pass: 1 });

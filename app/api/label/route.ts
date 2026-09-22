@@ -246,11 +246,10 @@ async function toRow(
     if (!opensAt || Date.parse(opensAt) > Date.now())
       return fail(403, "relabel_not_open");
   }
+  // Any pass: a relabel of a song first answered with the guesses on screen
+  // has seen them. Matching on pass made every relabel claim never-exposed.
   const exposed = await exposedBefore(
-    (r) =>
-      r.kind === "track" &&
-      r.track_id === input.track_id &&
-      r.pass === input.pass,
+    (r) => r.kind === "track" && r.track_id === input.track_id,
   );
   return {
     ...input,
