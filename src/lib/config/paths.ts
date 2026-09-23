@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { resolve } from "node:path";
 
 // Under vitest, never fall back to the real ./data (Spotify refresh token, spend
 // logs) or ./.env.local (API keys); tests/setup.ts points these at a temp dir.
@@ -10,7 +10,10 @@ function repoPathOrRefuse(envVar: string, fallback: string): string {
       `${envVar} is unset under test; refusing to use ./${fallback}`,
     );
   }
-  return join(process.cwd(), fallback);
+  // resolve() defers to cwd at call time. join(process.cwd(), …) with a
+  // non-literal makes Turbopack reference the whole project dir, and walking
+  // it dies on ml/venv's symlinks out of the root.
+  return resolve(fallback);
 }
 
 export function dataDir(): string {
