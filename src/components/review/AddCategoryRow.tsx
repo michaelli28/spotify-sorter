@@ -2,20 +2,21 @@
 import { useId, useRef, useState } from "react";
 import clsx from "clsx";
 import { Button } from "@/src/components/design/Button";
+import { Tab } from "@/src/components/graphics/Tab";
 import { nameKey } from "@/src/lib/categories/edits";
+import { NAME_INSET, TAB_AT_DASHED } from "./CategoryRow";
 import { FieldTextarea } from "./FieldTextarea";
-import { INDEX_TYPE, ROW_GRID, position } from "./CategoryRow";
 import { useFocusAfterRender } from "./useFocusAfterRender";
 
 export interface AddCategoryRowProps {
-  /** The number the new category would take in the index. */
+  /** The number the new category would take in the bin. */
   number: number;
   /** nameKey() of every name already in the draft. */
   taken: ReadonlySet<string>;
   onAdd: (name: string, description: string) => void;
 }
 
-/** The index's last line: the next number, and a slot to fill. */
+/** The bin's last divider: a dashed blank with the next number, to fill in. */
 export function AddCategoryRow({ number, taken, onAdd }: AddCategoryRowProps) {
   const rootRef = useRef<HTMLLIElement>(null);
   const focusAfter = useFocusAfterRender(rootRef);
@@ -41,24 +42,30 @@ export function AddCategoryRow({ number, taken, onAdd }: AddCategoryRowProps) {
     close();
   }
 
-  const index = (
-    <span aria-hidden className={INDEX_TYPE}>
-      {position(number)}
-    </span>
-  );
-
   return (
-    <li ref={rootRef}>
+    <li
+      ref={rootRef}
+      className={clsx(
+        "relative rounded-[3px] border-[1.5px] border-dashed",
+        open ? "border-ink bg-card" : "border-rule-strong",
+      )}
+    >
+      <Tab
+        catalogueNo={number}
+        temperature={null}
+        size="review"
+        aria-hidden
+        className={TAB_AT_DASHED}
+      />
       {open ? (
         <form
-          className={clsx(ROW_GRID, "gap-y-2 py-3")}
+          className="grid gap-y-4 p-4 max-tab:px-2.5"
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
-          {index}
-          <div className="min-w-0">
+          <div>
             <FieldTextarea
               face="display"
               data-focus="new-name"
@@ -72,42 +79,34 @@ export function AddCategoryRow({ number, taken, onAdd }: AddCategoryRowProps) {
               onEscape={close}
             />
             {clash && (
-              <p
-                id={errorId}
-                role="alert"
-                className="mt-1 text-sm text-[var(--color-danger)]"
-              >
+              <p id={errorId} role="alert" className="mt-1.5 text-danger">
                 Another category is called this.
               </p>
             )}
           </div>
-          <div className="col-start-2 min-w-0 lg:col-start-3">
-            <FieldTextarea
-              face="body"
-              aria-label="New category description"
-              placeholder="how it feels"
-              value={description}
-              onValueChange={setDescription}
-              onEnter={submit}
-              onEscape={close}
-            />
-          </div>
-          <div className="col-start-2 -ml-1 flex gap-x-6 pt-3 lg:col-end-4">
-            <Button type="submit" variant="ghost" size="sm" disabled={!ready}>
+          <FieldTextarea
+            face="body"
+            aria-label="New category description"
+            placeholder="how it feels"
+            value={description}
+            onValueChange={setDescription}
+            onEnter={submit}
+            onEscape={close}
+          />
+          <div className="flex gap-x-6">
+            <Button type="submit" variant="quiet" disabled={!ready}>
               Add
             </Button>
-            <Button variant="ghost" size="sm" onClick={close}>
+            <Button variant="ghost" onClick={close}>
               Cancel
             </Button>
           </div>
         </form>
       ) : (
-        <div className={clsx(ROW_GRID, "py-3")}>
-          {index}
+        <div className={clsx("flex min-h-[55px] items-center", NAME_INSET)}>
           <Button
-            variant="ghost"
+            variant="quiet"
             data-focus="add"
-            className="-ml-1 justify-self-start"
             onClick={() => {
               setOpen(true);
               focusAfter("new-name");

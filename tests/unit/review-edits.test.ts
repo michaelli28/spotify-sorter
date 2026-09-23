@@ -60,6 +60,19 @@ describe("categoryEdits", () => {
     expect(e.redescribed.map((c) => c.id)).toEqual(["a", "c"]);
     expect(describeEdits(e)).toBe("1 renamed · 2 edited");
   });
+
+  // The Colour picker's override is saved with the category, so picking one
+  // (or going back to Auto) is an unsaved change like any other field.
+  it("counts a colour change, set or cleared, as an edit", () => {
+    const coloured = [
+      { ...SAVED[0]!, temperature: "glow" as const },
+      ...SAVED.slice(1),
+    ];
+    expect(categoryEdits(SAVED, coloured).edited).toBe(1);
+    expect(describeEdits(categoryEdits(SAVED, coloured))).toBe("1 edited");
+    expect(categoryEdits(coloured, SAVED).edited).toBe(1);
+    expect(categoryEdits(coloured, coloured).edited).toBe(0);
+  });
 });
 
 describe("duplicateNameKeys", () => {

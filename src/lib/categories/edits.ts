@@ -13,7 +13,7 @@ export interface CategoryEdits {
   renamed: CategoryRename[];
   /** Saved categories whose description changed (renamed or not). */
   redescribed: DraftCategory[];
-  /** Saved, not renamed, whose description or sample tracks changed. */
+  /** Saved, not renamed, whose description, colour or sample tracks changed. */
   edited: number;
 }
 
@@ -39,6 +39,7 @@ export function categoryEdits(
       renamed.push({ id: c.id, from: old.name, to: c.name });
     } else if (
       describedAnew ||
+      old.temperature !== c.temperature ||
       !sameList(old.example_track_ids, c.example_track_ids)
     ) {
       edited++;

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Cache } from "@/src/lib/cache/schema";
 import type { DraftCategory } from "@/src/lib/categories/merge";
 import { unsortedTrackIds } from "@/src/lib/classification/unsorted";
+import { libraryStats, type LibraryStats } from "./stats";
 import type { TrackLookupEntry } from "./TrackSearchModal";
 
 export type SourcePhase =
@@ -18,11 +19,13 @@ export interface Library {
   unsorted: number;
   /** Placed by Claude, not by hand: what re-scoring a new category sends. */
   rescorable: number;
+  /** Counts, the chart and "Mostly", from the saved classification. */
+  stats: LibraryStats;
 }
 
 type CachePayload = Pick<
   Cache,
-  "tracks" | "artists" | "categories" | "assignments"
+  "config" | "tracks" | "artists" | "categories" | "assignments"
 >;
 
 const EMPTY: Library = {
@@ -30,6 +33,7 @@ const EMPTY: Library = {
   trackCount: 0,
   unsorted: 0,
   rescorable: 0,
+  stats: { fit: 0, byCategory: {}, max: 0 },
 };
 
 function libraryFrom(cache: CachePayload): Library {
@@ -50,6 +54,7 @@ function libraryFrom(cache: CachePayload): Library {
     // The same rule as src/lib/pipeline/reclassify.ts.
     rescorable: Object.values(cache.assignments).filter((a) => !a.override)
       .length,
+    stats: libraryStats(cache),
   };
 }
 
@@ -59,6 +64,8 @@ function categoriesFrom(cache: CachePayload): DraftCategory[] {
     name: c.name,
     description: c.description,
     example_track_ids: c.example_track_ids ?? [],
+    // Dropping it here made every save clear the owner's colour.
+    ...(c.temperature ? { temperature: c.temperature } : {}),
   }));
 }
 

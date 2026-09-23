@@ -74,12 +74,12 @@ describe("CostPreviewModal on /review", () => {
       <CostPreviewModal
         {...base}
         confirmLabel="Wipe & re-propose"
-        confirmVariant="danger"
+        confirmVariant="danger-confirm"
       />,
     );
     expect(
       screen.getByRole("button", { name: "Wipe & re-propose" }),
-    ).toHaveAttribute("data-variant", "danger");
+    ).toHaveAttribute("data-variant", "danger-confirm");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Not yet" })).toHaveFocus(),
     );

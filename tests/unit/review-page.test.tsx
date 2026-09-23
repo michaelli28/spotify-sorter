@@ -88,6 +88,7 @@ const cacheBody = ({
   categories = CATEGORIES as Record<string, unknown>,
   assignments = placed(TRACK_IDS) as Record<string, unknown>,
 } = {}) => ({
+  config: { prefix: "✨", confidence_threshold: 65, anthropic_model: "m" },
   tracks: TRACKS,
   artists: ARTISTS,
   categories,
@@ -105,6 +106,8 @@ const server = {
   cache: [] as Reply[],
   patch: {} as Reply,
   reclassify: {} as Reply,
+  /** GET /api/status; 404 by default (the study is then treated as open). */
+  status: { status: 404 } as Reply,
   calls: [] as { method: string; url: string; body?: unknown }[],
 };
 function stubServer() {
@@ -125,7 +128,9 @@ function stubServer() {
           ? server.patch
           : url === "/api/llm/reclassify"
             ? server.reclassify
-            : { status: 404 };
+            : url === "/api/status"
+              ? server.status
+              : { status: 404 };
     if (reply === "pending") return new Promise<Response>(() => {});
     if (typeof reply === "function") return reply();
     return new Response(JSON.stringify(reply.body ?? { ok: true }), {
@@ -172,6 +177,7 @@ beforeEach(() => {
   server.cache = [{ body: cacheBody() }];
   server.patch = {};
   server.reclassify = {};
+  server.status = { status: 404 };
   server.calls = [];
   stubServer();
 });
@@ -211,6 +217,8 @@ describe("/review before the categories are known", () => {
     await renderReview();
     expect(screen.getByText(/another version of the app/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    // Nor a dead Classify, as if it would come back.
+    expect(screen.queryByRole("button", { name: "Classify" })).toBeNull();
   });
 });
 
@@ -342,14 +350,12 @@ describe("/review with saved categories", () => {
     const clashing = screen.getAllByRole("button", { name: /^dream pop$/i });
     expect(clashing).toHaveLength(2);
     for (const row of clashing)
-      expect(within(row).getByText(/^dream pop$/i)).toHaveClass(
-        "text-[var(--color-danger)]",
-      );
+      expect(within(row).getByText(/^dream pop$/i)).toHaveClass("text-danger");
     expect(
       within(screen.getByRole("button", { name: "Emo Rap" })).getByText(
         "Emo Rap",
       ),
-    ).not.toHaveClass("text-[var(--color-danger)]");
+    ).not.toHaveClass("text-danger");
   });
 
   it("deletes a category with one undo that puts it back in its place", async () => {
@@ -383,6 +389,22 @@ describe("/review with saved categories", () => {
     expect(rowNames()).toEqual(["Dream Pop", "Trance"]);
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(rowNames()).toEqual(["Emo Rap", "Dream Pop", "Trance"]);
+  });
+
+  // The same picker grammar as classify's Move to…: the catalogue tab is a
+  // category's identity on every page, and it adds nothing to the name.
+  it("prints each merge target with its catalogue tab, named by its name alone", async () => {
+    await renderReview();
+    await openRow("Emo Rap");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into…" }));
+    const picker = screen.getByRole("group", { name: "Merge Emo Rap into" });
+    const options = within(picker).getAllByRole("button", {
+      name: /^(Dream Pop|Trance)$/,
+    });
+    expect(options.map((b) => b.textContent)).toEqual([
+      "02Dream Pop",
+      "03Trance",
+    ]);
   });
 
   // Enter used to do nothing while more than one category matched.
@@ -610,7 +632,9 @@ describe("/review Re-propose", () => {
     await renderReview();
     await openRow("Trance");
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await userEvent.click(screen.getByRole("button", { name: "Re-propose" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Re-propose all…" }),
+    );
     expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
       /^Deletes all 3 categories and every track's place in them/,
     );
@@ -618,12 +642,14 @@ describe("/review Re-propose", () => {
 
   it("asks before wiping, in rust, starting on Not yet", async () => {
     await renderReview();
-    await userEvent.click(screen.getByRole("button", { name: "Re-propose" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Re-propose all…" }),
+    );
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAccessibleDescription(/all 3 categories/);
     expect(
       screen.getByRole("button", { name: "Wipe & re-propose" }),
-    ).toHaveAttribute("data-variant", "danger");
+    ).toHaveAttribute("data-variant", "danger-confirm");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Not yet" })).toHaveFocus(),
     );
@@ -636,7 +662,9 @@ describe("/review Re-propose", () => {
       { body: cacheBody({ categories: {}, assignments: {} }) },
     ];
     await renderReview();
-    await userEvent.click(screen.getByRole("button", { name: "Re-propose" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Re-propose all…" }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Wipe & re-propose" }),
     );
@@ -649,5 +677,356 @@ describe("/review Re-propose", () => {
       },
     ]);
     expect(heading()).toHaveTextContent("Proposing categories…");
+  });
+});
+
+describe("/review sheet", () => {
+  const sheet = () =>
+    screen.getByRole("complementary", { name: "Open category" });
+  const cover = (name: string) =>
+    screen.getByRole("img", { name: `Cover for ${name}` });
+  const colour = () => screen.getByRole("radiogroup", { name: "Colour" });
+  async function proceed() {
+    await userEvent.click(classifyButton());
+    await userEvent.click(screen.getByRole("button", { name: "Proceed" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/classify"));
+    return (writes()[0]!.body as { categories: Record<string, object> })
+      .categories;
+  }
+
+  // Desktop shows one pulled divider; several open rows was the old index.
+  it("opens one category at a time, in the side sheet", async () => {
+    await renderReview();
+    await openRow("Emo Rap");
+    await openRow("Dream Pop");
+    const names = screen.getAllByRole("textbox", { name: "Category name" });
+    expect(names).toHaveLength(1);
+    expect(
+      within(sheet()).getByRole("textbox", { name: "Category name" }),
+    ).toHaveValue("Dream Pop");
+    expect(screen.getByRole("button", { name: "Dream Pop" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Emo Rap" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  // Narrow screens: the divider gives way to its editor, so the name isn't
+  // printed twice, and there is no side sheet.
+  it("opens the editor inside the divider on narrow screens", async () => {
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }));
+    await renderReview();
+    await openRow("Dream Pop");
+    expect(
+      screen.queryByRole("complementary", { name: "Open category" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dream Pop" })).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Category name" }),
+    ).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("button", { name: "Dream Pop" })).toHaveFocus();
+  });
+
+  // Desktop: the sheet's column never sits blank. Until a category is open it
+  // says what goes there; opening one replaces the note with the sheet.
+  it("holds the sheet's place with a note until a category opens", async () => {
+    await renderReview();
+    expect(screen.getByText("Open a category to edit it here.")).toBeVisible();
+    await openRow("Dream Pop");
+    expect(screen.queryByText("Open a category to edit it here.")).toBeNull();
+    expect(
+      within(sheet()).getByRole("textbox", { name: "Category name" }),
+    ).toHaveValue("Dream Pop");
+  });
+
+  // PressList (home, /apply) links each playlist to /review#<id>.
+  it("opens the category a /review#<id> link names", async () => {
+    window.history.replaceState(null, "", "/review#c2");
+    try {
+      await renderReview();
+      expect(
+        within(sheet()).getByRole("textbox", { name: "Category name" }),
+      ).toHaveValue("Dream Pop");
+      expect(screen.getByRole("button", { name: "Dream Pop" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("opens nothing for a hash that names no category", async () => {
+    window.history.replaceState(null, "", "/review#nope");
+    try {
+      await renderReview();
+      expect(
+        screen.queryByRole("textbox", { name: "Category name" }),
+      ).toBeNull();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  // decodeURIComponent throws on a cut-off escape; that took the page down.
+  it("still loads under a mangled hash", async () => {
+    window.history.replaceState(null, "", "/review#%E0%A4%A");
+    try {
+      await renderReview();
+      expect(heading()).toHaveTextContent("3 categories. Edit anything.");
+      expect(
+        screen.queryByRole("textbox", { name: "Category name" }),
+      ).toBeNull();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("closes on Escape from inside the sheet, back to its divider", async () => {
+    await renderReview();
+    await openRow("Dream Pop");
+    act(() =>
+      within(colour()).getByRole("radio", { name: "Auto (guess)" }).focus(),
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("complementary", { name: "Open category" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Dream Pop" })).toHaveFocus();
+  });
+
+  // The rename reprints once typing pauses, not on every keystroke.
+  it("reprints the sleeve 400ms after a rename, not while typing", async () => {
+    await renderReview();
+    await openRow("Dream Pop");
+    const name = within(sheet()).getByRole("textbox", {
+      name: "Category name",
+    });
+    await userEvent.clear(name);
+    await userEvent.type(name, "Metal");
+    // "metal" is a dusk cue; the old print holds until the pause.
+    expect(cover("Metal")).toHaveAttribute("data-temp", "haze");
+    await waitFor(() =>
+      expect(cover("Metal")).toHaveAttribute("data-temp", "dusk"),
+    );
+  });
+
+  it("reprints the sleeve when a colour is picked, and saves it", async () => {
+    await renderReview();
+    await openRow("Dream Pop");
+    // "dream" is a haze cue.
+    expect(cover("Dream Pop")).toHaveAttribute("data-temp", "haze");
+    const auto = within(colour()).getByRole("radio", { name: "Auto (guess)" });
+    expect(auto).toBeChecked();
+    // The guess is named in words, not only by the Auto tab's tint.
+    expect(auto).toHaveAccessibleDescription("auto guesses haze");
+    await userEvent.click(
+      within(colour()).getByRole("radio", { name: "charge" }),
+    );
+    expect(cover("Dream Pop")).toHaveAttribute("data-temp", "charge");
+    expect(screen.getByText("Unsaved: 1 edited")).toBeInTheDocument();
+    const saved = await proceed();
+    expect(saved.c2).toMatchObject({ temperature: "charge" });
+    expect(saved.c1).not.toHaveProperty("temperature");
+  });
+
+  it("goes back to the guess on Auto, and saves no colour", async () => {
+    server.cache = [
+      {
+        body: cacheBody({
+          categories: {
+            ...CATEGORIES,
+            c2: { ...CATEGORIES.c2, temperature: "glow" },
+          },
+        }),
+      },
+    ];
+    await renderReview();
+    await openRow("Dream Pop");
+    expect(cover("Dream Pop")).toHaveAttribute("data-temp", "glow");
+    expect(within(colour()).getByRole("radio", { name: "glow" })).toBeChecked();
+    await userEvent.click(
+      within(colour()).getByRole("radio", { name: "Auto (guess)" }),
+    );
+    expect(cover("Dream Pop")).toHaveAttribute("data-temp", "haze");
+    expect(screen.getByText("Unsaved: 1 edited")).toBeInTheDocument();
+    expect((await proceed()).c2).not.toHaveProperty("temperature");
+  });
+
+  // Loading a category used to drop its colour, so any save cleared it.
+  it("keeps a saved colour through a save that didn't touch it", async () => {
+    server.cache = [
+      {
+        body: cacheBody({
+          categories: {
+            ...CATEGORIES,
+            c1: { ...CATEGORIES.c1, temperature: "glow" },
+          },
+        }),
+      },
+    ];
+    await renderReview();
+    expect(screen.queryByText(/Unsaved/)).toBeNull();
+    expect((await proceed()).c1).toMatchObject({ temperature: "glow" });
+  });
+
+  it("names the top artists only once the labelling study is closed", async () => {
+    server.status = { body: { label_study_open: false } };
+    await renderReview();
+    await openRow("Emo Rap");
+    await waitFor(() =>
+      expect(within(sheet()).getByText("Mostly")).toBeInTheDocument(),
+    );
+    expect(within(sheet()).getByText("Frank Ocean · Mac Miller")).toBeVisible();
+  });
+
+  it.each([
+    ["open", { body: { label_study_open: true } }],
+    ["unknown", { status: 404 }],
+  ] as const)(
+    "hides the top artists while the study is %s",
+    async (_, reply) => {
+      server.status = reply;
+      await renderReview();
+      await openRow("Emo Rap");
+      await waitFor(() =>
+        expect(server.calls.some((c) => c.url === "/api/status")).toBe(true),
+      );
+      expect(within(sheet()).queryByText("Mostly")).toBeNull();
+      expect(
+        within(sheet()).queryByText("Frank Ocean · Mac Miller"),
+      ).toBeNull();
+    },
+  );
+
+  it("charts the category at each fit, marking yours", async () => {
+    await renderReview();
+    await openRow("Emo Rap");
+    expect(
+      within(sheet()).getByRole("img", {
+        name: /^Tracks at each fit: 3,000 at 40,/,
+      }),
+    ).toHaveAccessibleName(/Yours is 65\.$/);
+  });
+});
+
+describe("/review counts", () => {
+  const row = (name: string) => screen.getByRole("button", { name });
+
+  it("prints each category's count at the fit", async () => {
+    await renderReview();
+    expect(row("Emo Rap")).toHaveAccessibleDescription(/3,000 tracks/);
+    expect(row("Trance")).toHaveAccessibleDescription(/0 tracks/);
+  });
+
+  // Just proposed: no category has a track yet, so no column of zeros.
+  it("prints no counts or chart while nothing is placed", async () => {
+    server.cache = [{ body: cacheBody({ assignments: {} }) }];
+    await renderReview();
+    expect(row("Emo Rap")).not.toHaveAccessibleDescription(/tracks/);
+    await openRow("Emo Rap");
+    expect(
+      screen.queryByRole("img", { name: /Tracks at each fit/ }),
+    ).toBeNull();
+  });
+
+  it("says new for a category Classify hasn't sorted into", async () => {
+    await renderReview();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Add a category" }),
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "New category name" }),
+      "Late Night{Enter}",
+    );
+    expect(row("Late Night")).toHaveAccessibleDescription(/new/);
+    await openRow("Late Night");
+    expect(
+      screen.queryByRole("img", { name: /Tracks at each fit/ }),
+    ).toBeNull();
+  });
+
+  // The saved count no longer holds once another category merged in.
+  it("marks a merge target's count stale until Classify, and undo clears it", async () => {
+    await renderReview();
+    expect(within(row("Emo Rap")).getByText("3,000")).not.toHaveClass(
+      "text-ink-3",
+    );
+    await openRow("Trance");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into…" }));
+    await userEvent.type(
+      within(
+        screen.getByRole("group", { name: "Merge Trance into" }),
+      ).getByRole("searchbox"),
+      "emo{Enter}",
+    );
+    expect(within(row("Emo Rap")).getByText("3,000")).toHaveClass("text-ink-3");
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(row("Emo Rap")).getByText("3,000")).not.toHaveClass(
+      "text-ink-3",
+    );
+  });
+
+  // Its sheet mustn't chart the old numbers as if they still held.
+  it("charts a merge target's numbers as before the merge", async () => {
+    await renderReview();
+    await openRow("Trance");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into…" }));
+    await userEvent.type(
+      within(
+        screen.getByRole("group", { name: "Merge Trance into" }),
+      ).getByRole("searchbox"),
+      "emo{Enter}",
+    );
+    await openRow("Emo Rap");
+    expect(
+      screen.getByRole("img", { name: /^Tracks at each fit/ }),
+    ).toHaveAccessibleName(
+      /^Tracks at each fit, before the merge: 3,000 at 40,/,
+    );
+  });
+
+  it("teaches drag-to-merge on the status line while nothing is pending", async () => {
+    await renderReview();
+    expect(
+      screen.getByText("Drag a divider onto another to merge them."),
+    ).toBeInTheDocument();
+    await openRow("Trance");
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(
+      screen.queryByText("Drag a divider onto another to merge them."),
+    ).toBeNull();
+  });
+
+  // Drag-to-merge is mouse-only; a touch screen merges through Merge into….
+  it("doesn't teach dragging without a mouse", async () => {
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      matches: media.includes("min-width"),
+      media,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }));
+    await renderReview();
+    expect(heading()).toHaveTextContent("3 categories. Edit anything.");
+    expect(
+      screen.queryByText("Drag a divider onto another to merge them."),
+    ).toBeNull();
   });
 });

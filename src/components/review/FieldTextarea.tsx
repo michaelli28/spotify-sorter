@@ -6,6 +6,7 @@ import {
   type TextareaHTMLAttributes,
 } from "react";
 import clsx from "clsx";
+import { controlClass } from "@/src/components/design/Input";
 
 // field-sizing grows the box with its text where supported; elsewhere the
 // height follows scrollHeight on each change.
@@ -27,7 +28,10 @@ export interface FieldTextareaProps extends Omit<
   invalid?: boolean;
 }
 
-/** A borderless field that wraps instead of clipping, with a bottom rule. */
+/**
+ * A one-line field that wraps instead of clipping: a name in Caprasimo on a
+ * dotted rule ("display"), or a description on a ruled index card ("body").
+ */
 export function FieldTextarea({
   value,
   onValueChange,
@@ -69,16 +73,12 @@ export function FieldTextarea({
       onChange={(e) => onValueChange(e.target.value.replace(/\s*\n\s*/g, " "))}
       onKeyDown={handleKey}
       className={clsx(
-        "block w-full min-w-0 resize-none bg-transparent px-0 py-1 [field-sizing:content]",
-        "border-b transition-colors duration-200 focus:outline-none",
-        "placeholder:text-[var(--color-text-tertiary)]",
-        invalid
-          ? "border-[var(--color-danger)]"
-          : "border-[var(--color-border-default)] hover:border-[var(--color-border-strong)]",
-        "focus:border-[var(--color-accent)]",
-        face === "display"
-          ? "font-[family-name:var(--font-display)] text-xl leading-tight tracking-tight text-[var(--color-text-primary)] md:text-2xl"
-          : "text-sm leading-relaxed text-[var(--color-text-secondary)] focus:text-[var(--color-text-primary)]",
+        "block min-w-0 resize-none [field-sizing:content] placeholder:text-ink-3",
+        controlClass({
+          kind: face === "display" ? "display" : "ruled",
+          invalid,
+        }),
+        face === "display" && "leading-[1.12] max-tab:text-lead",
         className,
       )}
       {...rest}

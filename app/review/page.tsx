@@ -7,10 +7,14 @@ import { ActionBar } from "@/src/components/design/ActionBar";
 import { Button } from "@/src/components/design/Button";
 import { useNavLock } from "@/src/components/design/NavLock";
 import { PageShell } from "@/src/components/design/PageShell";
+import { Tab } from "@/src/components/graphics/Tab";
 import { CategoryIndex } from "@/src/components/review/CategoryIndex";
+import { TAB_AT_DASHED } from "@/src/components/review/CategoryRow";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
 import { TrackSearchModal } from "@/src/components/review/TrackSearchModal";
 import { useCategorySource } from "@/src/components/review/useCategorySource";
+import { useLabelStudyClosed } from "@/src/components/review/useLabelStudy";
+import { useMediaQuery } from "@/src/hooks/useMediaQuery";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import {
@@ -25,6 +29,7 @@ import { estimateRescoreCost } from "@/src/lib/categories/rescore-cost";
 import { estimateClassifyCost, estimateCostUSD } from "@/src/lib/llm/cost";
 
 const HOME = { href: "/", label: "Home" } as const;
+const MERGE_HINT = "Drag a divider onto another to merge them.";
 
 type Work =
   | { kind: "saving" }
@@ -68,8 +73,15 @@ export default function ReviewPage() {
   // finishes and saves), but it shouldn't be one stray click away.
   useNavLock(phase.kind === "proposing" || work !== null);
   const { fade } = useMotionConfig();
+  const showMostly = useLabelStudyClosed();
+  // Drag-to-merge is mouse-only, so only a mouse is told about it.
+  // Drag-to-merge exists only for a mouse (MouseSensor).
+  const canDrag = useMediaQuery("(hover: hover) and (pointer: fine)", true);
 
-  if (phase.kind === "loading") return <PageShell>{null}</PageShell>;
+  // The strip prints from the first render (the server holds its room), with
+  // Classify disabled until there is something to classify.
+  const waiting = <ActionBar end={<Button disabled>Classify</Button>} />;
+  if (phase.kind === "loading") return <PageShell>{waiting}</PageShell>;
   if (phase.kind === "loadError")
     return (
       <Stalled
@@ -89,11 +101,20 @@ export default function ReviewPage() {
   if (phase.kind === "proposing")
     return (
       <PageShell title="Proposing categories…" back={HOME}>
-        <ThinkingIndicator
-          message={`Claude is reading all ${tally(library.trackCount, "track")}. Leaving this page won't stop it.`}
-          estimateSeconds={Math.max(30, Math.round(library.trackCount / 30))}
-          outputTokens={phase.outputTokens}
-        />
+        {waiting}
+        <div className="grid items-start gap-12 [--sheet-w:380px] desk:grid-cols-[minmax(0,1fr)_var(--sheet-w)] min-[1101px]:[--sheet-w:440px]">
+          <div className="desk:order-2">
+            <ThinkingIndicator
+              message={`Claude is reading all ${tally(library.trackCount, "track")}. Leaving this page won't stop it.`}
+              estimateSeconds={Math.max(
+                30,
+                Math.round(library.trackCount / 30),
+              )}
+              outputTokens={phase.outputTokens}
+            />
+          </div>
+          <EmptyBin />
+        </div>
       </PageShell>
     );
 
@@ -201,34 +222,73 @@ export default function ReviewPage() {
             ? `${clashCount} categories are called “${clash.name.trim()}”.`
             : unnamed
               ? "Every category needs a name."
-              : pending && `Unsaved: ${pending}`));
+              : pending
+                ? `Unsaved: ${pending}`
+                : canDrag && draft.length > 1
+                  ? MERGE_HINT
+                  : null));
 
   const adding = draft.find((c) => c.id === addingTo);
 
   return (
     <PageShell title={`${draft.length} categories. Edit anything.`}>
+      <ActionBar
+        status={
+          status && (
+            // A changed line fades in; drag hints share one key so crossing
+            // rows doesn't flicker.
+            <motion.span
+              key={dragHint ? "drag" : status}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={fade}
+              className={clsx(
+                status === problem && "text-danger",
+                // A narrow window with a mouse: the hint won't fit beside
+                // Classify, and a cut-off hint teaches nothing.
+                status === MERGE_HINT && "max-tab:hidden",
+              )}
+            >
+              {status}
+            </motion.span>
+          )
+        }
+        end={
+          <Button
+            disabled={blocked}
+            busy={work !== null}
+            onClick={() => {
+              setProblem(null);
+              setAsking("classify");
+            }}
+          >
+            {work?.kind === "saving"
+              ? "Saving…"
+              : work?.kind === "rescoring"
+                ? "Re-scoring…"
+                : "Classify"}
+          </Button>
+        }
+      />
       <div
         inert={work !== null}
         className={clsx(
-          "transition-opacity duration-200",
+          "transition-opacity duration-240 ease-out",
           work && "opacity-60",
         )}
       >
         <CategoryIndex
           categories={draft}
+          saved={saved}
           tracks={library.tracks}
+          stats={library.stats}
+          placed={placed > 0}
+          showMostly={showMostly}
           onChange={setDraft}
           onAddTrack={setAddingTo}
           onDragHint={setDragHint}
+          onRepropose={() => setAsking("repropose")}
         />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-1 mt-section"
-          onClick={() => setAsking("repropose")}
-        >
-          Re-propose
-        </Button>
       </div>
 
       <CostPreviewModal
@@ -284,7 +344,7 @@ export default function ReviewPage() {
             : []
         }
         confirmLabel="Wipe & re-propose"
-        confirmVariant="danger"
+        confirmVariant="danger-confirm"
         onConfirm={wipe}
         onCancel={() => setAsking(null)}
       />
@@ -311,41 +371,6 @@ export default function ReviewPage() {
                   : c,
             ),
           )
-        }
-      />
-
-      <ActionBar
-        status={
-          status && (
-            // A changed line fades in, so a new count is noticed down here;
-            // drag hints share one key so crossing rows doesn't flicker.
-            <motion.span
-              key={dragHint ? "drag" : status}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={fade}
-              className={clsx(
-                status === problem && "text-[var(--color-danger)]",
-              )}
-            >
-              {status}
-            </motion.span>
-          )
-        }
-        end={
-          <Button
-            disabled={blocked}
-            onClick={() => {
-              setProblem(null);
-              setAsking("classify");
-            }}
-          >
-            {work?.kind === "saving"
-              ? "Saving…"
-              : work?.kind === "rescoring"
-                ? "Re-scoring…"
-                : "Classify"}
-          </Button>
         }
       />
     </PageShell>
@@ -404,12 +429,42 @@ function Stalled({
   message: string;
   onRetry?: () => void;
 }) {
+  // Try again is the one way forward, so it takes the strip's primary slot.
+  // With no retry that can help, the strip stays empty: a disabled Classify
+  // would promise it comes back.
   return (
     <PageShell title={title} back={HOME}>
-      <div className="max-w-xl space-y-6">
-        <p className="text-[var(--color-text-secondary)]">{message}</p>
-        {onRetry && <Button onClick={onRetry}>Try again</Button>}
-      </div>
+      <ActionBar
+        end={onRetry ? <Button onClick={onRetry}>Try again</Button> : null}
+      />
+      <p className="max-w-xl text-ink-2">{message}</p>
     </PageShell>
+  );
+}
+
+/** While Claude proposes: the bin's blank dividers, waiting to be printed. */
+function EmptyBin() {
+  return (
+    <div
+      aria-hidden
+      className="rounded-[3px] border border-rule-strong bg-paper-deep px-4 pt-3 pb-4 max-tab:-mx-gutter max-tab:rounded-none max-tab:border-x-0 max-tab:px-gutter"
+    >
+      <ol className="flex flex-col gap-2 pt-6">
+        {Array.from({ length: 8 }, (_, i) => (
+          <li
+            key={i}
+            className="relative h-[58px] rounded-[3px] border-[1.5px] border-dashed border-rule-strong max-tab:h-[54px]"
+          >
+            {/* Unnumbered: a catalogue number belongs to a real category. */}
+            <Tab
+              catalogueNo={null}
+              temperature={null}
+              size="review"
+              className={TAB_AT_DASHED}
+            />
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }

@@ -90,13 +90,13 @@ export function TrackSearchModal({
             Add {picked.size > 0 ? `${picked.size} ` : ""}track
             {picked.size === 1 ? "" : "s"}
           </Button>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
         </>
       }
     >
-      <div className="sticky top-0 z-10 bg-[var(--color-bg-elevated)] pb-4">
+      <div className="sticky top-0 z-10 bg-card pb-4">
         <Input
           ref={searchRef}
           type="search"
@@ -108,7 +108,7 @@ export function TrackSearchModal({
         />
       </div>
       {filtered.length === 0 && (
-        <p className="py-2 text-sm text-[var(--color-text-tertiary)]">
+        <p className="py-2 text-ink-2">
           No matches.
         </p>
       )}
@@ -123,30 +123,28 @@ export function TrackSearchModal({
                 onClick={() => !inCat && togglePick(t.id)}
                 disabled={inCat}
                 aria-pressed={inCat ? undefined : isPicked}
-                className="flex w-full items-center gap-3 px-panel py-2 text-left hover:bg-[var(--color-bg-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-11 w-full items-center gap-3 px-panel py-2 text-left transition-colors duration-180 ease-out hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span
-                  className={`flex h-5 w-5 flex-shrink-0 items-center justify-center border ${
-                    isPicked
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent)]"
-                      : "border-[var(--color-border-strong)]"
+                  className={`flex size-5 flex-shrink-0 items-center justify-center rounded-[2px] border-[1.5px] ${
+                    isPicked ? "border-ink bg-ink" : "border-rule-strong"
                   }`}
                   aria-hidden
                 >
                   {isPicked && (
-                    <Check className="h-3 w-3 text-[var(--color-bg-base)]" />
+                    <Check strokeWidth={2.25} className="size-3.5 text-paper" />
                   )}
                   {inCat && (
                     <Check
                       strokeWidth={1.25}
-                      className="h-3 w-3 text-[var(--color-text-secondary)]"
+                      className="size-3.5 text-ink-2"
                     />
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-text-primary)]">
+                <span className="min-w-0 flex-1 truncate font-semibold text-ink">
                   {t.title}
                 </span>
-                <span className="max-w-[40%] truncate text-sm text-[var(--color-text-secondary)]">
+                <span className="max-w-[40%] truncate text-ink-2">
                   {t.artist_name}
                 </span>
                 {/* A dimmed, ticked row reads as "already in"; a label ate

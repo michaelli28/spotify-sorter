@@ -1,10 +1,19 @@
 "use client";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import clsx from "clsx";
 import { Button } from "@/src/components/design/Button";
+import { controlClass } from "@/src/components/design/Input";
+import { Tab } from "@/src/components/graphics/Tab";
+import type { Temperature } from "@/src/lib/sleeves/temperature";
 
 export interface MergePickerProps {
   sourceName: string;
-  targets: readonly { id: string; name: string }[];
+  targets: readonly {
+    id: string;
+    name: string;
+    catalogueNo: number;
+    temperature: Temperature;
+  }[];
   onMerge: (targetId: string) => void;
   onCancel: () => void;
 }
@@ -70,39 +79,50 @@ export function MergePicker({
       aria-label={`Merge ${sourceName} into`}
       className="max-w-md"
     >
-      <div className="flex items-baseline gap-6">
-        <input
-          ref={inputRef}
-          type="search"
-          aria-label="Filter categories"
-          placeholder={`Merge ${sourceName} into…`}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onFilterKey}
-          className="min-w-0 flex-1 border-b border-[var(--color-border-default)] bg-transparent px-0 py-2 text-sm [&::-webkit-search-cancel-button]:appearance-none text-[var(--color-text-primary)] transition-colors duration-200 placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)] focus:outline-none"
-        />
-        <Button variant="ghost" size="sm" onClick={onCancel}>
+      <div className="flex items-end gap-6">
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="font-semibold">Merge {sourceName} into…</span>
+          <input
+            ref={inputRef}
+            type="search"
+            placeholder="Type to filter"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onFilterKey}
+            className={clsx(
+              controlClass(),
+              "[&::-webkit-search-cancel-button]:appearance-none",
+            )}
+          />
+        </label>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
       </div>
       {matches.length === 0 ? (
-        <p className="mt-3 text-sm text-[var(--color-text-tertiary)]">
-          No category matches.
-        </p>
+        <p className="mt-3 text-ink-2">No category matches.</p>
       ) : (
         <ul
           ref={listRef}
           onKeyDown={onOptionKey}
-          className="mt-2 max-h-64 overflow-y-auto overscroll-contain"
+          className="mt-2 max-h-64 divide-y divide-rule overflow-y-auto overscroll-contain"
         >
+          {/* Classify's Move to… rows: the tab is the category's identity on
+              every page; the name alone names the option. */}
           {matches.map((t) => (
             <li key={t.id}>
               <button
                 type="button"
                 onClick={() => onMerge(t.id)}
-                className="block w-full py-1 text-left font-[family-name:var(--font-display)] text-lg leading-snug text-[var(--color-text-secondary)] -outline-offset-2 transition-colors duration-200 hover:text-[var(--color-text-primary)] focus-visible:text-[var(--color-text-primary)]"
+                className="flex min-h-11 w-full items-center gap-3 rounded-[3px] px-2 py-2.5 text-left font-semibold text-ink-2 transition-colors duration-180 ease-out hover:bg-paper-deep hover:text-ink focus-visible:text-ink focus-visible:outline-offset-[-2px]"
               >
-                {t.name}
+                <Tab
+                  aria-hidden
+                  catalogueNo={t.catalogueNo}
+                  temperature={t.temperature}
+                  size="review"
+                />
+                <span className="min-w-0 truncate">{t.name}</span>
               </button>
             </li>
           ))}
