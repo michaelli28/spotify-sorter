@@ -45,6 +45,39 @@ describe("listOwnedPlaylists", () => {
     expect(playlists[0]).toMatchObject({ name: "Mine", track_count: 12 });
   });
 
+  // /me/playlists is ordered by recently-modified, so a library that shifts
+  // between page fetches can serve the same playlist on two pages. Rendering
+  // that list by id then warns about duplicate React keys and shows the row
+  // twice. Observed live: 107 playlists, 2 of them duplicated.
+  it("drops a playlist repeated across pages", async () => {
+    const owned = (id: string, name: string) => ({
+      id,
+      name,
+      owner: { id: "me-id" },
+      tracks: { total: 1 },
+      images: [],
+    });
+    server.use(
+      http.get("https://api.spotify.com/v1/me", () =>
+        HttpResponse.json({ id: "me-id" }),
+      ),
+      http.get("https://api.spotify.com/v1/me/playlists", ({ request }) => {
+        const offset = new URL(request.url).searchParams.get("offset");
+        return offset === "50"
+          ? HttpResponse.json({
+              items: [owned("p2", "Shifted"), owned("p3", "Third")],
+              next: null,
+            })
+          : HttpResponse.json({
+              items: [owned("p1", "First"), owned("p2", "Shifted")],
+              next: "https://api.spotify.com/v1/me/playlists?limit=50&offset=50",
+            });
+      }),
+    );
+    const playlists = await listOwnedPlaylists("AT");
+    expect(playlists.map((p) => p.id)).toEqual(["p1", "p2", "p3"]);
+  });
+
   it("reads the track count from `items.total` (Feb 2026 rename)", async () => {
     server.use(
       http.get("https://api.spotify.com/v1/me", () =>

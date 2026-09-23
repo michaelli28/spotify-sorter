@@ -64,8 +64,12 @@ export async function listOwnedPlaylists(
     spotifyApi("/me/playlists?limit=50"),
     { accessToken },
   );
+  // /me/playlists is ordered by recently-modified, so a library that changes
+  // between page fetches can serve one playlist on two pages. Keep the first.
+  const seen = new Set<string>();
   return all
     .filter((p) => p?.owner?.id === me.id)
+    .filter((p) => !seen.has(p.id) && seen.add(p.id))
     .map((p) => ({
       id: p.id,
       name: p.name,
