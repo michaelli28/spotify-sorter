@@ -11,6 +11,9 @@ export interface CacheBreakdown {
 
 interface Props {
   open: boolean;
+  /** Categories this save would delete. Named here because it is the only
+   *  destructive half of a button labelled with a price. */
+  removing?: { id: string; name: string }[];
   estimateUsd: { low: number; high: number };
   message: string;
   breakdown?: CacheBreakdown;
@@ -21,6 +24,7 @@ interface Props {
 
 export function CostPreviewModal({
   open,
+  removing = [],
   estimateUsd,
   message,
   breakdown,
@@ -54,6 +58,23 @@ export function CostPreviewModal({
               {estimateUsd.high.toFixed(2)}
             </div>
             <p className="text-[var(--color-text-secondary)] mb-6">{message}</p>
+            {removing.length > 0 && (
+              <div className="mb-6 border-l-2 border-[var(--color-accent)] pl-4">
+                <p className="text-[var(--color-text-primary)] mb-1">
+                  {removing.length === 1
+                    ? "This also deletes 1 category:"
+                    : `This also deletes ${removing.length} categories:`}
+                </p>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  {removing.map((c) => c.name).join(", ")}
+                </p>
+                <p className="text-sm text-[var(--color-text-tertiary)] mt-2">
+                  The labelling page needs one heading per category in
+                  definitions.md, so it will refuse to load until that file
+                  matches.
+                </p>
+              </div>
+            )}
             {breakdown && (
               <div className="mb-8 border-t border-[var(--color-border-default)] pt-5 space-y-1.5 text-sm text-[var(--color-text-secondary)]">
                 <div className="flex justify-between">

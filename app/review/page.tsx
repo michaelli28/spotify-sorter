@@ -7,6 +7,8 @@ import { Button } from "@/src/components/design/Button";
 import { MergeableGrid } from "@/src/components/review/MergeableGrid";
 import { AddCategoryForm } from "@/src/components/review/AddCategoryForm";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
+import { buildCategoriesPatch } from "@/src/lib/categories/patch-body";
+import { categoryDelta } from "@/src/lib/categories/delta";
 import { TrackSearchModal } from "@/src/components/review/TrackSearchModal";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 import { estimateCostUSD, estimateClassifyCost } from "@/src/lib/llm/cost";
@@ -38,6 +40,9 @@ function timeAgo(iso: string): string {
 export default function ReviewPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftCategory[] | null>(null);
+  // What the cache held when the page loaded, so the confirm can name the
+  // categories a save would delete.
+  const [saved, setSaved] = useState<{ id: string; name: string }[]>([]);
   const [tracks, setTracks] = useState<Record<string, TrackLookupEntry>>({});
   const [trackCount, setTrackCount] = useState(0);
   const [assignmentCount, setAssignmentCount] = useState(0);
@@ -86,6 +91,7 @@ export default function ReviewPage() {
         >,
       );
       if (existingCategories.length > 0) {
+        setSaved(existingCategories.map(([id, c]) => ({ id, name: c.name })));
         setDraft(
           existingCategories.map(([id, c]) => ({
             id,
@@ -130,20 +136,9 @@ export default function ReviewPage() {
     );
     await fetch("/api/cache", {
       method: "PATCH",
-      body: JSON.stringify({
-        categories: Object.fromEntries(
-          draft!.map((c) => [
-            c.id,
-            {
-              name: c.name,
-              description: c.description,
-              spotify_playlist_id: null,
-              created_at: new Date().toISOString(),
-              example_track_ids: c.example_track_ids,
-            },
-          ]),
-        ),
-      }),
+      body: JSON.stringify(
+        buildCategoriesPatch(draft!, new Date().toISOString()),
+      ),
       headers: { "content-type": "application/json" },
     });
     const draftCategoryIds = new Set(draft!.map((c) => c.id));
@@ -278,6 +273,7 @@ export default function ReviewPage() {
       )}
       <CostPreviewModal
         open={confirming}
+        removing={categoryDelta(saved, draft).removed}
         estimateUsd={classifyEst}
         message={
           tracksLeftToClassify === 0
