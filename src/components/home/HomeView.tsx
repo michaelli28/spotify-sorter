@@ -1,13 +1,20 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
+import clsx from "clsx";
 import type { AppStatus } from "@/src/lib/status";
 import { ButtonLink, buttonClass } from "@/src/components/design/Button";
-import { PageShell } from "@/src/components/design/PageShell";
 import { ClassifyGate } from "@/src/components/shared/ClassifyGate";
+import { EmptyCrate } from "./EmptyCrate";
+import { HomeCrate } from "./HomeCrate";
+import { PressList } from "@/src/components/graphics/PressList";
+import type { Shelf } from "./shelf";
 
 export interface HomeViewProps {
   status: AppStatus;
   /** Spotify's consent screen sent the user back without a grant. */
   denied?: { detail: string | null };
+  /** The crate and the press list. Absent before there are categories. */
+  shelf?: Shelf | null;
 }
 
 type Step = "setup" | "connect" | "choose" | "sort" | "apply" | "check";
@@ -26,6 +33,8 @@ function nextStep(s: AppStatus): Step {
 const num = (n: number) => n.toLocaleString("en-US");
 const count = (n: number, one: string, many = `${one}s`) =>
   `${num(n)} ${n === 1 ? one : many}`;
+// At display size a number must never end a line without its noun.
+const NOWRAP = "whitespace-nowrap";
 
 function headline(s: AppStatus): ReactNode {
   if (s.tracks === 0 || s.version_mismatch)
@@ -37,28 +46,33 @@ function headline(s: AppStatus): ReactNode {
   if (s.categories === 0)
     return (
       <>
-        {count(s.tracks, "track")}, <em>no categories yet</em>.
+        <span className={NOWRAP}>{count(s.tracks, "track")},</span>{" "}
+        <em>no categories yet</em>.
       </>
     );
   if (s.unsorted > 0)
     return (
       <>
-        <em>
-          {num(s.tracks - s.unsorted)} of {num(s.tracks)}
-        </em>{" "}
-        tracks sorted.
+        <em>{num(s.tracks - s.unsorted)} of</em>{" "}
+        <span className={NOWRAP}>
+          <em>{num(s.tracks)}</em> tracks
+        </span>{" "}
+        sorted.
       </>
     );
   if (s.applied < s.categories)
     return (
       <>
-        {count(s.tracks, "track")}, sorted into{" "}
-        <em>{count(s.categories, "category", "categories")}</em>.
+        <span className={NOWRAP}>{count(s.tracks, "track")},</span> sorted into{" "}
+        <em className={NOWRAP}>
+          {count(s.categories, "category", "categories")}
+        </em>
+        .
       </>
     );
   return (
     <>
-      <em>{count(s.categories, "playlist")}</em> on Spotify.
+      <em className={NOWRAP}>{count(s.categories, "playlist")}</em> on Spotify.
     </>
   );
 }
@@ -108,90 +122,149 @@ function Primary({ step, unsorted }: { step: Step; unsorted: number }) {
 // OAuth error codes are snake_case; anything else in the URL isn't Spotify's.
 const OAUTH_CODE = /^[a-z_]{1,40}$/;
 
-export function HomeView({ status, denied }: HomeViewProps) {
+const ROUTE =
+  "flex min-h-12 items-center no-underline decoration-[1.5px] underline-offset-[5px] hover:underline";
+
+export function HomeView({ status, denied, shelf }: HomeViewProps) {
   // A cache from another version reads as empty, so nothing below can be offered.
   const step = status.version_mismatch ? null : nextStep(status);
   const text = lede(status);
-  const pages = (
-    [
-      ["/review", "Categories", status.categories > 0],
-      ["/label", "Labels", status.categories > 0],
-      [
-        "/scope",
-        "Check for new tracks",
-        status.connected && (step === "sort" || step === "apply"),
-      ],
-    ] as const
-  ).filter(([, , show]) => show);
-  // Only beside the page links: alone it's noise, and every primary that
+  // Categories and Labels live in the site nav now (spec §3.1).
+  const check = status.connected && (step === "sort" || step === "apply");
+  // Only once there's a library to keep: before that, every primary that
   // reaches Spotify leads somewhere that offers Reconnect on a refusal.
-  const reconnect = status.configured && status.connected && pages.length > 0;
+  const reconnect =
+    status.configured && status.connected && status.categories > 0;
   const code =
     denied?.detail && OAUTH_CODE.test(denied.detail) ? denied.detail : null;
   // A declined reconnect leaves the stored token working, so that line sits
   // by Reconnect when it can, not above an action it didn't stop.
   const deniedLine = denied && (
-    <p className="text-sm text-[var(--color-danger)]">
+    <p className="pb-3 text-danger">
       Spotify didn&apos;t {status.connected ? "reconnect" : "connect"}
       {code && ` (${code})`}.
     </p>
   );
   const lineAtPrimary = !reconnect && deniedLine;
 
+  const crate =
+    shelf && shelf.entries.length > 0 && !status.version_mismatch
+      ? shelf
+      : null;
+  // Nothing placed, or tracks still unsorted (Apply is locked): the list
+  // would promise a write that can't happen (brief §3 States).
+  const press = crate && crate.adds > 0 && status.unsorted === 0 ? crate : null;
+  const allOn = status.applied >= status.categories;
+
   return (
-    <PageShell>
-      <div className="mt-16 grid gap-y-section md:mt-24 lg:mt-32 lg:grid-cols-12 lg:items-end lg:gap-x-12">
-        <div className="lg:col-span-8">
-          <h1 className="font-[family-name:var(--font-display)] text-display-1 tracking-tight text-balance text-[var(--color-text-primary)]">
+    <main className="page-frame pb-section">
+      <section className="grid gap-y-12 pt-8 pb-16 tab:pt-12 desk:max-[1100px]:grid-cols-[minmax(0,1fr)_380px] desk:max-[1100px]:gap-x-12 min-[1101px]:grid-cols-[minmax(0,1fr)_440px] min-[1101px]:gap-x-16">
+        <div className="flex min-w-0 flex-col items-start desk:pt-12">
+          <h1 className="font-display text-display-1 text-balance text-ink desk:max-w-[14ch]">
             {headline(status)}
           </h1>
           {text && (
-            <p className="mt-6 max-w-lg text-lg leading-relaxed text-[var(--color-text-secondary)]">
+            <p className="mt-4 max-w-lg text-lead text-ink-2 tab:mt-6">
               {text}
             </p>
           )}
           {status.version_mismatch && (
-            <p className="mt-10 max-w-lg text-lg leading-relaxed text-[var(--color-danger)]">
+            <p className="mt-8 max-w-lg text-lead text-danger">
               Your library file is from another version of SpotifySorter.
             </p>
           )}
-          {lineAtPrimary && <div className="mt-10">{lineAtPrimary}</div>}
+          {lineAtPrimary && (
+            <div className="mt-8 tab:mt-12">{lineAtPrimary}</div>
+          )}
           {step && (
-            <div className={lineAtPrimary ? "-ml-1 mt-3" : "-ml-1 mt-12"}>
+            <div
+              className={clsx(
+                "flex w-full max-tab:[&>[data-variant=primary]]:flex-1",
+                lineAtPrimary ? "mt-1" : "mt-8 tab:mt-12",
+              )}
+            >
               <Primary step={step} unsorted={status.unsorted} />
             </div>
           )}
+          {(check || reconnect) && (
+            <nav
+              aria-label="Library"
+              className="mt-12 w-full tab:mt-16 desk:max-w-[30rem]"
+            >
+              <ul className="border-t-[1.5px] border-ink">
+                {check && (
+                  <li className="border-b border-rule">
+                    <Link href="/scope" className={clsx(ROUTE, "font-medium")}>
+                      Check for new tracks
+                    </Link>
+                  </li>
+                )}
+                {reconnect && (
+                  <li className="border-b border-rule">
+                    <a
+                      href="/api/auth/login"
+                      className={clsx(ROUTE, "text-ink-2 hover:text-ink")}
+                    >
+                      Reconnect Spotify
+                    </a>
+                    {deniedLine}
+                  </li>
+                )}
+              </ul>
+            </nav>
+          )}
         </div>
-        {pages.length > 0 && (
-          <nav aria-label="Pages" className="lg:col-span-4">
-            <ul className="-ml-1 flex flex-col items-start gap-1">
-              {pages.map(([href, label]) => (
-                <li key={href}>
-                  <ButtonLink href={href} variant="ghost">
-                    {label}
-                  </ButtonLink>
-                </li>
-              ))}
-            </ul>
-            {reconnect && (
-              <div className="mt-5">
-                {deniedLine}
-                <a
-                  href="/api/auth/login"
-                  data-variant="ghost"
-                  className={buttonClass({
-                    variant: "ghost",
-                    size: "sm",
-                    className: "-ml-1",
-                  })}
-                >
-                  Reconnect Spotify
-                </a>
-              </div>
+        {crate ? <HomeCrate entries={crate.entries} /> : <EmptyCrate />}
+      </section>
+
+      {press && (
+        <section
+          aria-labelledby="press-heading"
+          className="border-t-[1.5px] border-ink pt-12 tab:pt-16"
+        >
+          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-x-12 gap-y-2 tab:mb-12">
+            <h2 id="press-heading" className="font-display text-display-2">
+              {allOn ? "On Spotify" : "What Apply writes"}
+            </h2>
+            <p className="num text-ink-2">
+              {/* Once all are on Spotify the h1 has already said how many. */}
+              {!allOn && (
+                <>
+                  <b className="font-semibold text-ink">
+                    {num(press.playlists)}
+                  </b>{" "}
+                  {press.playlists === 1 ? "playlist" : "playlists"} ·{" "}
+                </>
+              )}
+              <b className="font-semibold text-ink">{num(press.adds)}</b>{" "}
+              {press.adds === 1 ? "add" : "adds"} at fit {press.threshold}
+              {press.fitNone > 0 && (
+                <>
+                  {" · "}
+                  <b className="font-semibold text-ink">
+                    {num(press.fitNone)}
+                  </b>{" "}
+                  {press.fitNone === 1 ? "track fits" : "tracks fit"} none
+                </>
+              )}
+            </p>
+          </div>
+          <PressList
+            rows={press.entries.map(
+              ({ id, catalogueNo, name, count, spec }) => ({
+                id,
+                catalogueNo,
+                name,
+                count,
+                spec,
+              }),
             )}
-          </nav>
-        )}
-      </div>
-    </PageShell>
+            onSpotify={
+              new Set(press.entries.filter((e) => e.onSpotify).map((e) => e.id))
+            }
+          />
+        </section>
+      )}
+    </main>
   );
 }

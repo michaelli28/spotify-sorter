@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,15 +47,19 @@ afterEach(async () => {
 const ISO = "2026-09-01T00:00:00.000Z";
 const AUTH = { refresh_token: "rt-secret", expires_at: ISO };
 const track = (title: string) => ({ artist_id: "a1", title, first_seen: ISO });
-const category = (name: string, playlist: string | null = null) => ({
+const category = (
+  name: string,
+  playlist: string | null = null,
+  examples: string[] = [],
+) => ({
   name,
   description: "",
   spotify_playlist_id: playlist,
   created_at: ISO,
-  example_track_ids: [],
+  example_track_ids: examples,
 });
-const assignment = (categoryId: string) => ({
-  matches: [{ category_id: categoryId, score: 80 }],
+const assignment = (categoryId: string, score = 80) => ({
+  matches: [{ category_id: categoryId, score }],
   classified_at: ISO,
   override: null,
 });
@@ -84,6 +95,21 @@ async function writeLibrary(over: Record<string, unknown> = {}) {
       playlist_snapshots: {},
       liked_songs_fingerprint: null,
       ...over,
+    }),
+  );
+}
+
+// data/labels/sample.json: the pre-registered labelling sample (blind rule).
+async function plantSample(randomTrackIds: string[]) {
+  await mkdir(join(dir, "labels"), { recursive: true });
+  await writeFile(
+    join(dir, "labels", "sample.json"),
+    JSON.stringify({
+      seed: "s",
+      created_at: ISO,
+      random_track_ids: randomTrackIds,
+      pairs: [],
+      relabel_track_ids: [],
     }),
   );
 }
@@ -203,21 +229,41 @@ describe("Home, returning", () => {
     expect(hrefs().filter((h) => h === "/scope")).toHaveLength(1);
   });
 
-  it("keeps quiet links to the other pages", async () => {
+  // Categories and Labels moved to the site nav, which now shows on / (spec §3.1).
+  it("keeps quiet links to new tracks and Reconnect, and leaves the rest to the site nav", async () => {
     configure();
     await writeLibrary();
     await renderHome();
+    const routes = screen.getByRole("navigation");
     const quiet = [
-      ["Categories", "/review"],
-      ["Labels", "/label"],
       ["Check for new tracks", "/scope"],
       ["Reconnect Spotify", "/api/auth/login"],
     ] as const;
     for (const [name, href] of quiet) {
-      const link = screen.getByRole("link", { name });
+      const link = within(routes).getByRole("link", { name });
       expect(link).toHaveAttribute("href", href);
       expect(link).not.toHaveAttribute("data-variant", "primary");
     }
+    expect(within(routes).getAllByRole("link")).toHaveLength(2);
+    for (const name of ["Categories", "Labels"]) {
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+  });
+
+  // Covers need a token with the new upload scope (spec §3.4), and that's
+  // wanted most once everything is on Spotify.
+  it("still offers Reconnect once every category is on Spotify", async () => {
+    configure();
+    await writeLibrary({
+      categories: {
+        c1: category("Night Drive", "sp1"),
+        c2: category("Rain", "sp2"),
+      },
+    });
+    await renderHome();
+    expect(
+      screen.getByRole("link", { name: "Reconnect Spotify" }),
+    ).toHaveAttribute("href", "/api/auth/login");
   });
 
   it("asks to connect instead of offering Spotify steps when the token is gone", async () => {
@@ -399,11 +445,185 @@ describe("Home, safety", () => {
     );
   });
 
-  it("shows no per-category detail beyond the counts", async () => {
+  // The crate and the press list name categories now (brief §3 Home); what
+  // must never appear is anything per song beyond title, artist and art.
+  it("never prints a per-song score", async () => {
+    configure();
+    await writeLibrary({
+      categories: {
+        c1: category("Night Drive", null, ["t1", "t3"]),
+        c2: category("Rain"),
+      },
+      assignments: {
+        t1: assignment("c1", 87),
+        t2: assignment("c2", 87),
+        t3: assignment("c1", 87),
+      },
+    });
+    await renderHome();
+    expect(screen.getByRole("main")).not.toHaveTextContent(/87|score/i);
+  });
+});
+
+const crateTabs = () =>
+  within(screen.getByRole("group", { name: "Flip through categories" }))
+    .getAllByRole("button")
+    .map((b) => b.getAttribute("aria-label"));
+
+describe("Home, the crate", () => {
+  it("stands the categories largest first and pulls the front one", async () => {
+    configure();
+    await writeLibrary({
+      categories: { c1: category("Rain"), c2: category("Night Drive") },
+      assignments: {
+        t1: assignment("c2"),
+        t2: assignment("c1"),
+        t3: assignment("c2"),
+      },
+    });
+    await renderHome();
+    expect(crateTabs()).toEqual([
+      "02 Night Drive, 2 tracks",
+      "01 Rain, 1 track",
+    ]);
+    expect(
+      screen.getByRole("link", { name: "Open Night Drive in Categories" }),
+    ).toHaveAttribute("href", "/review#c2");
+    expect(
+      screen.getByRole("link", { name: "02 Night Drive" }),
+    ).toHaveAttribute("href", "/review#c2");
+  });
+
+  it("shows the pulled category's example tracks, never one from the labelling sample", async () => {
+    configure();
+    await writeLibrary({
+      categories: {
+        c1: category("Night Drive", null, ["t1", "t2", "t3"]),
+        c2: category("Rain"),
+      },
+    });
+    await plantSample(["t2"]);
+    await renderHome();
+    const records = screen.getByRole("list", { name: "Tracks in Night Drive" });
+    expect(
+      within(records)
+        .getAllByRole("link")
+        .map((a) => a.textContent),
+    ).toEqual(["One", "Three"]);
+    expect(within(records).queryByText("Two")).toBeNull();
+  });
+
+  it("shows no records at all when the labelling sample can't be read", async () => {
+    configure();
+    await writeLibrary({
+      categories: {
+        c1: category("Night Drive", null, ["t1", "t3"]),
+        c2: category("Rain"),
+      },
+    });
+    await mkdir(join(dir, "labels"), { recursive: true });
+    await writeFile(join(dir, "labels", "sample.json"), "{ not json");
+    await renderHome();
+    expect(crateTabs()).toHaveLength(2);
+    expect(screen.queryByRole("list", { name: /^Tracks in/ })).toBeNull();
+  });
+
+  it("stands empty dividers and lists nothing when no track is placed yet", async () => {
+    configure();
+    await writeLibrary({ assignments: {} });
+    await renderHome();
+    expect(crateTabs()).toEqual(["01 Night Drive", "02 Rain"]);
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Sort 3 tracks" }),
+    ).toBeInTheDocument();
+  });
+
+  it("draws an empty crate, with nothing to flip, before there are categories", async () => {
+    configure();
+    await writeLibrary({ categories: {}, assignments: {} });
+    await renderHome();
+    expect(
+      screen.queryByRole("group", { name: "Flip through categories" }),
+    ).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+});
+
+describe("Home, what Apply writes", () => {
+  it("lists every playlist largest first, with the adds at the cutoff", async () => {
     configure();
     await writeLibrary();
     await renderHome();
-    const main = screen.getByRole("main");
-    expect(within(main).queryByText(/Night Drive|Rain/)).toBeNull();
+    const section = screen.getByRole("region", { name: "What Apply writes" });
+    expect(section).toHaveTextContent("2 playlists · 3 adds at fit 65");
+    expect(section).not.toHaveTextContent(/none/);
+    expect(
+      within(section)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("href")),
+    ).toEqual(["/review#c1", "/review#c2"]);
+  });
+
+  it("counts the sorted tracks whose category is gone", async () => {
+    configure();
+    await writeLibrary({
+      assignments: {
+        t1: assignment("c1"),
+        t2: assignment("gone"),
+        t3: assignment("c2"),
+      },
+    });
+    await renderHome();
+    expect(
+      screen.getByRole("region", { name: "What Apply writes" }),
+    ).toHaveTextContent(
+      "2 playlists · 2 adds at fit 65 · 1 track fits none",
+    );
+  });
+
+  it("counts the empty playlist Apply still makes for a category no track fits", async () => {
+    configure();
+    await writeLibrary({
+      categories: { ...CATEGORIES, c3: category("Empty Room") },
+    });
+    await renderHome();
+    const section = screen.getByRole("region", { name: "What Apply writes" });
+    expect(section).toHaveTextContent("3 playlists · 3 adds at fit 65");
+    expect(within(section).queryByText("Empty Room")).toBeNull();
+  });
+
+  it("is hidden while tracks are unsorted, since Apply can't run yet", async () => {
+    configure();
+    await writeLibrary({ assignments: { t1: assignment("c1") } });
+    await renderHome();
+    expect(crateTabs()).toEqual(["01 Night Drive, 1 track"]);
+    expect(screen.queryByRole("region", { name: /Apply writes/ })).toBeNull();
+  });
+
+  it("is retitled On Spotify, with no per-row marks, once every playlist is there", async () => {
+    configure();
+    await writeLibrary({
+      categories: {
+        c1: category("Night Drive", "sp1"),
+        c2: category("Rain", "sp2"),
+      },
+    });
+    await renderHome();
+    const section = screen.getByRole("region", { name: "On Spotify" });
+    expect(within(section).queryByText("on Spotify")).toBeNull();
+    // The h1 already says "2 playlists on Spotify."; the line doesn't repeat it.
+    expect(section).toHaveTextContent("3 adds at fit 65");
+    expect(section).not.toHaveTextContent(/playlists ·/);
+  });
+
+  it("marks only the rows already on Spotify while some are", async () => {
+    configure();
+    await writeLibrary({
+      categories: { c1: category("Night Drive", "sp1"), c2: category("Rain") },
+    });
+    await renderHome();
+    const section = screen.getByRole("region", { name: "What Apply writes" });
+    expect(within(section).getAllByText("on Spotify")).toHaveLength(1);
   });
 });
