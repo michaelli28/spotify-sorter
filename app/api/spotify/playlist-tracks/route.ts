@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { withSpotify } from "@/src/lib/spotify/client";
 import { fetchPlaylistTracks, fetchLikedSongs } from "@/src/lib/spotify/tracks";
 
 export const dynamic = "force-dynamic";
@@ -14,15 +14,20 @@ export async function GET(req: Request) {
       { status: 400 },
     );
   }
-  const jar = await cookies();
-  const accessToken = jar.get("sorter_access_token")?.value;
-  if (!accessToken) {
-    return NextResponse.json({ error: "no_access_token" }, { status: 401 });
-  }
+  // Same shape as the other Spotify routes: prefer the cookie, fall back to
+  // the stored refresh token. Requiring the cookie made this the only route
+  // that broke on localhost (it is host-scoped to 127.0.0.1) and an hour
+  // after connecting (Max-Age 3600), while every neighbouring call kept
+  // working — so the grid loaded and every preview 401'd.
+  const cookie = req.headers.get("cookie") ?? "";
+  const m = /sorter_access_token=([^;]+)/.exec(cookie);
+  const session = m
+    ? { accessToken: m[1]!, accessTokenExpiresAt: Date.now() + 60_000 }
+    : undefined;
   try {
-    const tracks = liked
-      ? await fetchLikedSongs(accessToken)
-      : await fetchPlaylistTracks(playlistId!, accessToken);
+    const tracks = await withSpotify(session, (token) =>
+      liked ? fetchLikedSongs(token) : fetchPlaylistTracks(playlistId!, token),
+    );
     return NextResponse.json({
       tracks: tracks.map((t) => ({
         id: t.id,
