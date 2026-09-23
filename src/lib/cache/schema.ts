@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TEMPERATURES } from "@/src/lib/sleeves/temperature";
 
 export const EXPECTED_CACHE_VERSION = 2;
 
@@ -40,6 +41,9 @@ export const CategorySchema = z.object({
   spotify_playlist_id: z.string().nullable(),
   created_at: ISODate,
   example_track_ids: z.array(z.string()).default([]),
+  // The owner's colour override; absent = the sleeve guesses from the name.
+  // Optional so old caches still parse at the same version.
+  temperature: z.enum(TEMPERATURES).optional(),
 });
 
 export const MatchSchema = z.object({

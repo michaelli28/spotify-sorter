@@ -1,3 +1,4 @@
+import type { Temperature } from "@/src/lib/sleeves/temperature";
 import type { DraftCategory } from "./merge";
 
 /**
@@ -22,6 +23,7 @@ export function buildCategoriesPatch(
       spotify_playlist_id: null;
       created_at: string;
       example_track_ids: string[];
+      temperature?: Temperature;
     }
   >;
 } {
@@ -36,6 +38,8 @@ export function buildCategoriesPatch(
           spotify_playlist_id: null,
           created_at: now,
           example_track_ids: c.example_track_ids,
+          // Absent, never null: "Auto (guess)" clears by leaving it out.
+          ...(c.temperature ? { temperature: c.temperature } : {}),
         },
       ]),
     ),

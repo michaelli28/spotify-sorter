@@ -1,8 +1,12 @@
+import type { Temperature } from "@/src/lib/sleeves/temperature";
+
 export interface DraftCategory {
   id: string;
   name: string;
   description: string;
   example_track_ids: string[];
+  /** The owner's colour override; absent = guessed from the name. */
+  temperature?: Temperature;
 }
 
 export function mergeCategories(

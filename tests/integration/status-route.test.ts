@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   mkdtemp,
+  mkdir,
   rm,
   readFile,
   writeFile,
@@ -101,6 +102,9 @@ describe("GET /api/status", () => {
       unsorted: 1,
       applied: 1,
       version_mismatch: false,
+      // Apply's rule: the orphan "gone" assignment is not a track, so c1 has 1.
+      category_counts: { c1: 1, c2: 1 },
+      label_study_open: false,
     });
     expect(JSON.stringify(body)).not.toContain("rt-secret");
   });
@@ -128,6 +132,8 @@ describe("GET /api/status", () => {
       unsorted: 0,
       applied: 0,
       version_mismatch: false,
+      category_counts: {},
+      label_study_open: false,
     });
     expect(await readdir(dir)).toEqual([]);
   });
@@ -144,6 +150,8 @@ describe("GET /api/status", () => {
       unsorted: 0,
       applied: 0,
       version_mismatch: true,
+      category_counts: {},
+      label_study_open: false,
     });
   });
 
@@ -161,5 +169,62 @@ describe("GET /api/status", () => {
     expect((await (await GET()).json()).configured).toBe(true);
     process.env.ANTHROPIC_API_KEY = "not-a-key";
     expect((await (await GET()).json()).configured).toBe(false);
+  });
+
+  // The classify set piece re-reads these after every batch, so they follow
+  // the saved cutoff: below it a track still lands in its top match.
+  it("counts every category's tracks at the saved threshold", async () => {
+    await seed(
+      cacheFile({
+        config: {
+          prefix: "✨",
+          confidence_threshold: 90,
+          anthropic_model: "claude-haiku-4-5-20251001",
+        },
+        assignments: {
+          t1: {
+            matches: [
+              { category_id: "c1", score: 95 },
+              { category_id: "c2", score: 92 },
+            ],
+            classified_at: ISO,
+            override: null,
+          },
+          t2: assignment("c2"),
+          t3: {
+            matches: [{ category_id: "c1", score: 95 }],
+            classified_at: ISO,
+            override: { category_id: "c2", set_at: ISO },
+          },
+        },
+        categories: {
+          c1: category("Night Drive", "sp1"),
+          c2: category("Rain", null),
+          c3: category("Empty", null),
+        },
+      }),
+    );
+    const body = await (await GET()).json();
+    expect(body.category_counts).toEqual({ c1: 1, c2: 3, c3: 0 });
+  });
+
+  it("reports the labelling study open while its sample is unlabelled", async () => {
+    await seed(cacheFile());
+    await mkdir(join(dir, "labels"), { recursive: true });
+    await writeFile(
+      join(dir, "labels", "sample.json"),
+      JSON.stringify({
+        seed: "s",
+        created_at: ISO,
+        random_track_ids: ["t1"],
+        relabel_track_ids: [],
+        pairs: [],
+      }),
+    );
+    await writeFile(
+      join(dir, "labels", "definitions.md"),
+      "## Night Drive\n## Rain\n",
+    );
+    expect((await (await GET()).json()).label_study_open).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { join } from "node:path";
 import { dataDir } from "@/src/lib/config/paths";
 import { readCache, writeCache, patchCache } from "@/src/lib/cache";
@@ -47,6 +48,14 @@ export async function PATCH(req: Request) {
   );
   const { _clear: _omit, ...rest } = body as Record<string, unknown>;
   const patched = patchCache(cleared, rest);
-  await writeCache(cachePath(), patched);
+  try {
+    await writeCache(cachePath(), patched);
+  } catch (err) {
+    // writeCache validates before it writes, and the stored cache already
+    // passed readCache, so a schema error here came from the body.
+    if (err instanceof z.ZodError)
+      return NextResponse.json({ error: "bad body" }, { status: 400 });
+    throw err;
+  }
   return NextResponse.json({ ok: true });
 }

@@ -30,11 +30,9 @@ export async function runScan(opts: {
   const onProgress = opts.onProgress ?? (() => {});
 
   const playlistIds = cache.scope.included_playlist_ids;
-  onProgress(
-    "playlists",
-    0,
-    playlistIds.length + (cache.scope.include_liked_songs ? 1 : 0),
-  );
+  // Liked Songs reports on its own "liked" stage, so it is not in this total:
+  // every "playlists" event must carry the same one or the scan's fill jumps.
+  onProgress("playlists", 0, playlistIds.length);
 
   const all = [];
   let done = 0;

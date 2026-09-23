@@ -209,6 +209,16 @@ createServer(async (req, res) => {
       return res.end(JSON.stringify(result));
     }
   }
+  // Apply's cover upload: Spotify answers 202 with no body.
+  if (method === "PUT" && /^\/spotify\/v1\/playlists\/[^/]+\/images$/.test(path)) {
+    res.writeHead(202);
+    return res.end();
+  }
+  // Album art lookups: no art, so every song shows the plain sleeve.
+  if (method === "GET" && path.startsWith("/oembed-host/oembed")) {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: "not found" }));
+  }
   if (method === "POST" && path === "/anthropic/v1/messages") {
     const { type, payload } = anthropic(body);
     res.writeHead(200, { "content-type": type });

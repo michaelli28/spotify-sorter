@@ -48,6 +48,7 @@ export default defineConfig({
         SORTER_ENV_FILE: join(DATA_DIR, ".env.local"),
         SPOTIFY_API_BASE: `${MOCK}/spotify/v1`,
         SPOTIFY_ACCOUNTS_BASE: `${MOCK}/accounts`,
+        SPOTIFY_OEMBED_BASE: `${MOCK}/oembed-host`,
         ANTHROPIC_BASE_URL: `${MOCK}/anthropic`,
         SPOTIFY_CLIENT_ID: "e2e-fake-client-id-00000000",
         ANTHROPIC_API_KEY: "sk-ant-e2e-fake",
