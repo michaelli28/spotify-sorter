@@ -85,6 +85,10 @@ suggestions on screen (`assisted: true`). CONFIRMED, both halves, with zero exce
   `ml/score-gold.py:147`. Best case from that pass is a 21-song self-agreement estimate.
 - The server ships `suggestions` on **every** GET including relabel (`app/api/label/route.ts:117`,
   `src/lib/labeling/store.ts:208-212`); blindness is a render decision in `TrackLabeler.tsx`, not a wire guarantee.
+  Evidence class **(b)**, not just code reading: `tests/e2e/label.spec.ts:138` asserts the label API emits no
+  `score`/`matches`/`rank`/`bin`/`assignments` key, and it **fails** — `GET /api/label has key "score"`. That
+  guard could not run between 2026-09-19 21:26 (when `ml/venv` broke `next build`, fixed in `caa8502`) and
+  2026-09-22, so the assisted-labelling feature that contradicts it shipped ~27 h into that window.
 - Fixed in `869724d`, before any relabel was written: `prior_exposure` was matched per-pass, so a relabel
   would have been stamped never-exposed. The match is now on the song, pinned by two tests.
 

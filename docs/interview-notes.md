@@ -108,7 +108,8 @@ offline scorers read it — and the design records the hash of the assignments i
 **Why:** If the UI can reach it, eventually it will render it.
 **Cost:** Two files that must stay in sync, checked by hash rather than by construction.
 **If pushed — "is the UI itself blind?":** Only at render time. The server still sends suggestions and the page
-hides them. Wire-level blindness would be a GET that omits them — I'd make that change before trusting it.
+hides them. There's an end-to-end test asserting the API never emits a score, and it fails today — I'd make the
+GET omit suggestions before trusting the boundary.
 
 ### 7. One verdict per pair, not the track's ranked five
 
@@ -172,6 +173,10 @@ was never called. Another printed a denominator and computed nothing.
 **Why it's the dangerous shape:** A missing metric announces itself. One with a helper, a test and a JSON key
 doesn't. The test proved the function was correct, never that it was reached.
 **Rule I took away:** Test that the number reaches the output, not just that the function is right.
+**Sharper version, found while writing these notes:** an end-to-end test asserts the labelling API never sends
+the model's scores. Creating a Python virtualenv inside the repo broke `next build`, which is what that suite
+runs on, so the test silently stopped running — and the feature that violates it shipped about a day later. A
+test that cannot run is worse than one that fails, because nothing goes red.
 
 ### 4. What I'd do differently: a smaller instrument
 
