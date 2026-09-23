@@ -1,7 +1,8 @@
 "use client";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
+import { Check } from "lucide-react";
 import clsx from "clsx";
-import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { DURATION, EASE_OUT } from "@/src/components/design/motion";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import type { StageId, StageRow, StageState } from "./stages";
 
@@ -11,68 +12,73 @@ const LABEL: Record<StageId, string> = {
   artists: "Artist genres",
 };
 
-const TONE: Record<StageState, string> = {
-  pending: "text-[var(--color-text-tertiary)]",
-  active: "text-[var(--color-text-primary)]",
-  done: "text-[var(--color-text-secondary)]",
-  skipped: "text-[var(--color-text-tertiary)]",
+/** The top strip's line while a stage runs; the strip announces it. */
+export const READING: Record<StageId, string> = {
+  playlists: "Reading playlists…",
+  liked: "Reading Liked Songs…",
+  artists: "Reading artist genres…",
 };
 
+type ShownState = Exclude<StageState, "skipped">;
+
+// Weight as well as ink marks the step being read: ink against ink-3 alone is
+// only 2.4:1 between neighbours.
+const TONE: Record<ShownState, string> = {
+  pending: "text-ink-3",
+  active: "font-semibold text-ink",
+  done: "text-ink-2",
+};
+
+// The page title carries the playlists count; only another stage's prints here.
+const COUNTED_IN_TITLE: StageId = "playlists";
+
 export function ScanStages({ rows }: { rows: StageRow[] }) {
-  const { item, itemDelay, spring, fade } = useMotionConfig();
-  const active = rows.find((row) => row.state === "active");
+  const { reduced } = useMotionConfig();
+  // A step the finished scan never needed (artist genres, with no new tracks)
+  // would sit unticked under a title that says done.
+  const shown = rows.filter(
+    (row): row is StageRow & { state: ShownState } => row.state !== "skipped",
+  );
   return (
-    <>
-      <ol className="max-w-md space-y-6">
-        {rows.map((row, i) => (
-          <motion.li
-            key={row.id}
-            aria-current={row.state === "active" ? "step" : undefined}
-            variants={item}
-            initial="hidden"
-            animate="visible"
-            transition={{ ...spring, delay: itemDelay(i) }}
-            className="relative flex items-baseline justify-between gap-6 text-lg"
-          >
-            <span
-              className={clsx(
-                "transition-colors duration-200",
-                TONE[row.state],
-              )}
-            >
-              {LABEL[row.id]}
-            </span>
-            {row.count && (
-              <span className="font-mono text-sm tabular-nums text-[var(--color-text-secondary)]">
-                {`${row.count.current.toLocaleString()} of ${row.count.total.toLocaleString()}`}
-              </span>
+    <ol className="border-t border-rule">
+      {shown.map((row) => (
+        <li
+          key={row.id}
+          aria-current={row.state === "active" ? "step" : undefined}
+          className="flex min-h-12 items-center justify-between gap-4 border-b border-rule text-lead"
+        >
+          <span
+            className={clsx(
+              "transition-colors duration-240 ease-out",
+              TONE[row.state],
             )}
-            {/* Absolute, so the rows don't shift as a count starts and ends. */}
-            <AnimatePresence initial={false}>
-              {row.count && (
-                <motion.div
-                  key="bar"
-                  className="absolute inset-x-0 -bottom-2"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={fade}
-                >
-                  <ProgressBar
-                    value={row.count.current}
-                    total={row.count.total}
-                    label={LABEL[row.id]}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.li>
-        ))}
-      </ol>
-      {/* Announces a new stage, not every count. */}
-      <p role="status" className="sr-only">
-        {active ? LABEL[active.id] : ""}
-      </p>
-    </>
+          >
+            {LABEL[row.id]}
+          </span>
+          {row.state === "done" && (
+            // Ticks off (brief §4.4 A): 240ms in, 4px of travel.
+            <motion.span
+              className="text-ink-2"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={
+                reduced
+                  ? { duration: DURATION.reduced }
+                  : { duration: DURATION.state, ease: EASE_OUT }
+              }
+            >
+              <Check aria-hidden size={20} strokeWidth={1.75} />
+            </motion.span>
+          )}
+          {/* Defensive: the server sends artist genres as 0 of N, then N of
+                N, so today no counted step is ever active with a count. */}
+          {row.count && row.id !== COUNTED_IN_TITLE && (
+            <span className="mono num text-ink-2">
+              {`${row.count.current.toLocaleString()} of ${row.count.total.toLocaleString()}`}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -85,6 +86,8 @@ async function renderScan() {
 }
 
 const heading = () => screen.getByRole("heading", { level: 1 });
+const strip = () => document.querySelector<HTMLElement>("[data-action-bar]")!;
+const stripStatus = () => within(strip()).getByRole("status");
 const lock = () => screen.getByRole("status", { name: "nav lock" });
 
 beforeEach(() => {
@@ -129,6 +132,21 @@ describe("/scan while reading", () => {
     const bar = screen.getByRole("progressbar", { name: "Playlists" });
     expect(bar).toHaveAttribute("aria-valuenow", "38");
     expect(bar).toHaveAttribute("aria-valuemax", "105");
+    // The title carries the playlists count, so the row doesn't print it again.
+    expect(list).not.toHaveTextContent(/\d/);
+  });
+
+  it("marks the step being read by weight, not only by colour", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    const list = within(screen.getByRole("list"));
+    const label = (name: string) =>
+      list.getByText(name).closest("li")!.firstElementChild!;
+    expect(label("Playlists")).toHaveClass("font-semibold");
+    expect(label("Liked Songs")).not.toHaveClass("font-semibold");
+    stream().emit("progress", { stage: "playlists", current: 105, total: 105 });
+    expect(label("Playlists")).not.toHaveClass("font-semibold");
+    expect(label("Liked Songs")).toHaveClass("font-semibold");
   });
 
   it("marks the stage being read as the current step", async () => {
@@ -168,6 +186,157 @@ describe("/scan while reading", () => {
     unmount();
     expect(openStreams()).toEqual([]);
   });
+
+  // StrictMode runs every effect twice in development: a second open stream
+  // would be a second full library read.
+  it("keeps one stream open under StrictMode", async () => {
+    stubCache(cacheBody());
+    render(
+      <StrictMode>
+        <ScanPage />
+      </StrictMode>,
+    );
+    await act(async () => {});
+    expect(openStreams()).toHaveLength(1);
+    expect(stream().url).toBe("/api/spotify/scan");
+  });
+});
+
+// Every page in the flow has the top strip: scope and diff either side of
+// this one, so the title never jumps by the strip's height between them.
+describe("/scan's top strip", () => {
+  it("prints the strip from the first render, with nothing to press", () => {
+    stubCache(cacheBody());
+    render(<ScanPage />);
+    expect(strip()).not.toBeNull();
+    expect(within(strip()).queryByRole("button")).toBeNull();
+    expect(within(strip()).queryByRole("link")).toBeNull();
+  });
+
+  it("says which source it is reading, and moves on with the scan", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    expect(stripStatus()).toHaveTextContent("Reading playlists…");
+    stream().emit("progress", { stage: "playlists", current: 105, total: 105 });
+    expect(stripStatus()).toHaveTextContent("Reading Liked Songs…");
+    stream().emit("progress", { stage: "liked", current: 1, total: 1 });
+    stream().emit("progress", { stage: "artists", current: 0, total: 40 });
+    expect(stripStatus()).toHaveTextContent("Reading artist genres…");
+    stream().emit("done", { unique_tracks: 3172, unique_artists: 1476 });
+    expect(stripStatus()).toBeEmptyDOMElement();
+  });
+
+  it("keeps the playlists count in the title, not in the strip too", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    stream().emit("progress", { stage: "playlists", current: 38, total: 105 });
+    expect(stripStatus()).not.toHaveTextContent(/\d/);
+  });
+
+  it("clears the reading line when the scan fails", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    stream().emit("error", { message: "Spotify artists 429: slow down" });
+    expect(stripStatus()).toBeEmptyDOMElement();
+  });
+});
+
+describe("/scan's crate", () => {
+  const playlists = (current: number, total = 105) =>
+    stream().emit("progress", { stage: "playlists", current, total });
+  const records = () => document.querySelectorAll("[data-record]").length;
+  const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+
+  it("titles the page with the playlists read, the true figure for assistive tech", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(0);
+    expect(heading()).toHaveTextContent("Reading your library…");
+    playlists(38);
+    expect(heading()).toHaveAccessibleName("38 of 105 playlists read");
+  });
+
+  it("ticks the printed count up to the true figure", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(38);
+    const printed = () =>
+      heading().querySelector('[aria-hidden="true"]')?.textContent;
+    // 800ms of EASE_OUT from 0: never the final figure straight away...
+    expect(printed()).not.toBe("38 of 105");
+    // ...but there once it settles.
+    await act(() => new Promise((r) => setTimeout(r, 1000)));
+    expect(printed()).toBe("38 of 105");
+  });
+
+  it("says playlist, not playlists, for a scope of one", async () => {
+    stubCache(cacheBody({ included_playlist_ids: ["p0"] }));
+    await renderScan();
+    playlists(1, 1);
+    expect(heading()).toHaveAccessibleName("1 of 1 playlist read");
+  });
+
+  it("never takes a record back out", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(38);
+    playlists(20);
+    expect(
+      screen.getByRole("progressbar", { name: "Playlists" }),
+    ).toHaveAttribute("aria-valuenow", "38");
+    expect(heading()).toHaveAccessibleName("38 of 105 playlists read");
+  });
+
+  it("drops a record for each playlist read, one per 180ms at most", async () => {
+    vi.useFakeTimers();
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(0);
+    wait(0);
+    expect(records()).toBe(0);
+    playlists(1);
+    wait(0);
+    expect(records()).toBe(1);
+    playlists(2);
+    playlists(3);
+    wait(179);
+    expect(records()).toBe(1);
+    // Both playlists go in with one record, so the crate never lags the scan.
+    wait(1);
+    expect(records()).toBe(2);
+    wait(1000);
+    expect(records()).toBe(2);
+  });
+
+  // Nothing is saved until the scan finishes, and an emptied crate would read
+  // as "your library is empty": the failure shows no crate at all.
+  it("puts the crate away when the scan fails", async () => {
+    vi.useFakeTimers();
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(38);
+    wait(0);
+    expect(records()).toBe(1);
+    expect(document.querySelector("[data-crate-fill]")).not.toBeNull();
+    stream().emit("error", { message: "Spotify artists 429: slow down" });
+    wait(1000);
+    expect(records()).toBe(0);
+    expect(document.querySelector("[data-crate-fill]")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("brings the crate back, empty, when you scan again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stubCache(cacheBody());
+    await renderScan();
+    playlists(38);
+    wait(0);
+    stream().emit("error", { message: "Spotify artists 429: slow down" });
+    await userEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    wait(1000);
+    expect(document.querySelector("[data-crate-fill]")).not.toBeNull();
+    expect(records()).toBe(0);
+  });
 });
 
 describe("/scan when the read is done", () => {
@@ -177,6 +346,21 @@ describe("/scan when the read is done", () => {
     stream().emit("done", { unique_tracks: 3172, unique_artists: 1476 });
     expect(heading()).toHaveTextContent("3,172 tracks from 1,476 artists.");
     expect(openStreams()).toEqual([]);
+  });
+
+  // No new tracks: the server never reads artist genres. A row left unticked
+  // under a finished title would read as unfinished work.
+  it("drops a step the scan didn't need", async () => {
+    stubCache(cacheBody());
+    await renderScan();
+    stream().emit("progress", { stage: "playlists", current: 105, total: 105 });
+    stream().emit("progress", { stage: "liked", current: 1, total: 1 });
+    stream().emit("done", { unique_tracks: 3172, unique_artists: 1476 });
+    expect(
+      within(screen.getByRole("list"))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Playlists", "Liked Songs"]);
   });
 
   // push left /scan in history: Back from /diff re-ran the whole scan.
@@ -225,10 +409,14 @@ describe("/scan when the read fails", () => {
 
     expect(heading()).toHaveTextContent("Spotify asked us to slow down.");
     const alert = screen.getByRole("alert");
+    // The alert is what gets announced, so it carries the reason too.
+    expect(alert).toHaveTextContent("Spotify asked us to slow down.");
     expect(alert).toHaveTextContent("Give it a minute.");
+    // The retry is the strip's primary, as on every other page that fails.
     expect(
-      within(alert).getByRole("button", { name: "Scan again" }),
+      within(strip()).getByRole("button", { name: "Scan again" }),
     ).toBeInTheDocument();
+    expect(within(alert).queryByRole("button")).toBeNull();
     expect(
       within(alert).getByRole("link", { name: "Change sources" }),
     ).toHaveAttribute("href", "/scope");
@@ -256,6 +444,8 @@ describe("/scan when the read fails", () => {
     expect(lock()).toHaveTextContent("locked");
     // The new run starts from nothing, not from the failed run's counts.
     expect(screen.getByRole("list")).not.toHaveTextContent(/\d/);
+    // Scan again leaves with the failure: focus lands on the new title, not <body>.
+    expect(heading()).toHaveFocus();
   });
 
   it("sends a signed-out user to reconnect, and nowhere else", async () => {
@@ -266,10 +456,11 @@ describe("/scan when the read fails", () => {
     });
     expect(heading()).toHaveTextContent("Spotify signed you out.");
     const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Spotify signed you out.");
     expect(
-      within(alert).getByRole("link", { name: "Reconnect Spotify" }),
+      within(strip()).getByRole("link", { name: "Reconnect Spotify" }),
     ).toHaveAttribute("href", "/api/auth/login");
-    expect(within(alert).getAllByRole("link")).toHaveLength(1);
+    expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -283,8 +474,9 @@ describe("/scan when the read fails", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("The sources you picked hold no tracks.");
     expect(
-      within(alert).getByRole("link", { name: "Change sources" }),
+      within(strip()).getByRole("link", { name: "Change sources" }),
     ).toHaveAttribute("href", "/scope");
+    expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText(/EMPTY_LIBRARY/)).toBeNull();
   });
@@ -297,7 +489,7 @@ describe("/scan when the read fails", () => {
     expect(heading()).toHaveTextContent("The scan stopped.");
     const alert = screen.getByRole("alert");
     expect(
-      within(alert).getByRole("button", { name: "Scan again" }),
+      within(strip()).getByRole("button", { name: "Scan again" }),
     ).toBeInTheDocument();
     expect(
       within(alert).getByRole("link", { name: "Change sources" }),
