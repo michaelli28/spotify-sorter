@@ -1,226 +1,109 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { DndContext, type DragEndEvent } from "@dnd-kit/core";
-import { motion } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
-import { Button } from "@/src/components/design/Button";
-import { ConfidenceSlider } from "@/src/components/classify/ConfidenceSlider";
+import { ButtonLink } from "@/src/components/design/Button";
+import { useNavLock } from "@/src/components/design/NavLock";
+import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { TuneView } from "@/src/components/classify/TuneView";
 import {
-  PlaylistPreviewCard,
-  type PreviewCardData,
-} from "@/src/components/classify/PlaylistPreviewCard";
-import { categoryMembers } from "@/src/lib/classification/threshold";
-import type { Assignment } from "@/src/lib/cache";
+  useClassifyRun,
+  type ClassifyState,
+  type FailReason,
+} from "@/src/components/classify/useClassifyRun";
 
-interface ClientCacheRun {
-  run_id: string;
-  type?: "propose" | "classify";
-  started_at: string;
-  completed_at: string | null;
-  tracks_total: number;
-  tracks_classified: number;
-  cost_usd: number;
-  summary: string;
-}
-
-interface ClientCache {
-  config: { confidence_threshold: number };
-  categories: Record<string, { name: string }>;
-  tracks: Record<string, { artist_id: string; title: string }>;
-  artists: Record<string, { name: string }>;
-  assignments: Record<string, Assignment>;
-  runs?: ClientCacheRun[];
-}
-
+// One component owns the stream for the whole visit: every state below is a
+// swap inside it, never a remount, so the paid run opens once.
 export default function ClassifyPage() {
-  const router = useRouter();
-  const [cache, setCache] = useState<ClientCache | null>(null);
-  const [threshold, setThreshold] = useState<number>(65);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [running, setRunning] = useState(true);
-  const [progress, setProgress] = useState({ done: 0, total: 1 });
-  const [latestRun, setLatestRun] = useState<ClientCacheRun | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const state = useClassifyRun();
+  // Leaving mid-run abandons the stream (the server keeps going unwatched).
+  useNavLock(state.phase === "running");
 
-  useEffect(() => {
-    const es = new EventSource("/api/llm/classify");
-    es.addEventListener("progress", (e) =>
-      setProgress(JSON.parse((e as MessageEvent).data)),
-    );
-    es.addEventListener("done", () => {
-      fetch("/api/cache")
-        .then((r) => r.json())
-        .then((d: ClientCache) => {
-          setCache(d);
-          setThreshold(d.config.confidence_threshold);
-          const lastClassify = [...(d.runs ?? [])]
-            .reverse()
-            .find((r) => r.type === "classify");
-          if (lastClassify) setLatestRun(lastClassify);
-          setRunning(false);
-        });
-      es.close();
-    });
-    es.addEventListener("error", () => es.close());
-    return () => es.close();
-  }, []);
-
-  const cards: PreviewCardData[] = useMemo(() => {
-    if (!cache) return [];
-    const members = categoryMembers(cache.assignments, threshold);
-    return Object.entries(cache.categories).map(([id, cat]) => {
-      const trackIds = Array.from(members.get(id) ?? []);
-      return {
-        id,
-        name: cat.name,
-        tracks: trackIds.map((tid) => {
-          const t = cache.tracks[tid]!;
-          return {
-            id: tid,
-            title: t.title,
-            artist_name: cache.artists[t.artist_id]?.name ?? "",
-          };
-        }),
-      };
-    });
-  }, [cache, threshold]);
-
-  function onDragEnd(e: DragEndEvent) {
-    if (!cache || !e.over) return;
-    const data = e.active.data.current as { trackId: string };
-    const over = e.over.data.current as { toCategoryId: string };
-    if (!data?.trackId || !over?.toCategoryId) return;
-    setCache((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev.assignments };
-      const a = next[data.trackId];
-      if (!a) return prev;
-      next[data.trackId] = {
-        ...a,
-        override: {
-          category_id: over.toCategoryId,
-          set_at: new Date().toISOString(),
-        },
-      };
-      return { ...prev, assignments: next };
-    });
-    fetch("/api/cache", {
-      method: "PATCH",
-      body: JSON.stringify({
-        assignments: {
-          [data.trackId]: {
-            ...cache.assignments[data.trackId],
-            override: {
-              category_id: over.toCategoryId,
-              set_at: new Date().toISOString(),
-            },
-          },
-        },
-      }),
-      headers: { "content-type": "application/json" },
-    });
+  switch (state.phase) {
+    case "loading":
+      return <PageShell>{null}</PageShell>;
+    case "running":
+      return <Running progress={state.progress} />;
+    case "empty":
+      return (
+        <PageShell title="No categories yet.">
+          {/* Not /review: with no categories it proposes, and pays, on load. */}
+          <ButtonLink href="/" variant="ghost" className="-ml-1">
+            Home
+          </ButtonLink>
+        </PageShell>
+      );
+    case "failed":
+      return <Failed {...state} />;
+    case "ready":
+      return (
+        <PageShell title="Tune the fit.">
+          <TuneView library={state.library} summary={state.summary} />
+        </PageShell>
+      );
   }
+}
 
-  if (running) {
-    return (
-      <PageShell eyebrow="Classifying" title="Listening through your library…">
-        <p className="text-[var(--color-text-secondary)]">
-          {progress.done} of {progress.total} batches.
-        </p>
-      </PageShell>
-    );
-  }
-
+function Running({
+  progress,
+}: Pick<Extract<ClassifyState, { phase: "running" }>, "progress">) {
   return (
-    <PageShell eyebrow="Step three" title="Tune the fit.">
-      {latestRun && !bannerDismissed && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8 -mt-2 px-5 py-3 bg-[var(--color-bg-surface)] border border-[var(--color-border-default)] flex items-start justify-between gap-4"
-        >
-          <div className="text-sm text-[var(--color-text-secondary)]">
-            <span className="text-[var(--color-text-primary)]">
-              {latestRun.tracks_classified > 0
-                ? `Classified ${latestRun.tracks_classified} new tracks for $${latestRun.cost_usd.toFixed(2)}.`
-                : `No new tracks needed Claude this run.`}
-            </span>
-            {latestRun.tracks_total > latestRun.tracks_classified && (
-              <span className="ml-2 text-[var(--color-text-tertiary)]">
-                Reused {latestRun.tracks_total - latestRun.tracks_classified}{" "}
-                cached.
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setBannerDismissed(true)}
-            className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] uppercase tracking-wider"
-          >
-            Dismiss
-          </button>
-        </motion.div>
-      )}
-      <div className="sticky top-0 z-10 bg-[var(--color-bg-base)] pt-4 pb-8 -mx-12 px-12 backdrop-blur-md">
-        <div className="max-w-md">
-          <ConfidenceSlider value={threshold} onChange={setThreshold} />
-        </div>
+    <PageShell title="Listening through your library…">
+      <div className="max-w-xl">
+        <ProgressBar
+          value={progress?.done ?? 0}
+          total={progress?.total ?? 0}
+          label="Sorting"
+        />
+        {progress && (
+          <p className="mt-3 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--color-text-tertiary)]">
+            {progress.done.toLocaleString("en-US")} of{" "}
+            {progress.total.toLocaleString("en-US")}
+          </p>
+        )}
       </div>
-      <DndContext onDragEnd={onDragEnd}>
-        <motion.div
-          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            visible: {
-              transition: { staggerChildren: 0.04, delayChildren: 0.1 },
-            },
-          }}
-        >
-          {cards.map((card) => (
-            <motion.div
-              key={card.id}
-              variants={{
-                hidden: { opacity: 0, y: 8 },
-                visible: { opacity: 1, y: 0 },
-              }}
-            >
-              <PlaylistPreviewCard
-                card={card}
-                expanded={expanded.has(card.id)}
-                onToggleExpand={() =>
-                  setExpanded((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(card.id)) next.delete(card.id);
-                    else next.add(card.id);
-                    return next;
-                  })
-                }
-              />
-            </motion.div>
-          ))}
-        </motion.div>
-      </DndContext>
-      <div className="pt-16">
-        <Button
-          onClick={async () => {
-            await fetch("/api/cache", {
-              method: "PATCH",
-              body: JSON.stringify({
-                config: {
-                  confidence_threshold: threshold,
-                  prefix: "✨",
-                  anthropic_model: "claude-haiku-4-5-20251001",
-                },
-              }),
-              headers: { "content-type": "application/json" },
-            });
-            router.push("/apply");
-          }}
-        >
-          Apply to Spotify
-        </Button>
+    </PageShell>
+  );
+}
+
+const FAILED: Record<FailReason, { title: string; note: string | null }> = {
+  unreadable: { title: "Couldn't read your library.", note: null },
+  // Each batch is written to the cache as it finishes.
+  stopped: {
+    title: "Sorting stopped.",
+    note: "Tracks sorted before it stopped are saved.",
+  },
+  // The server keeps a run going after the browser drops off.
+  disconnected: {
+    title: "Lost the connection.",
+    note: "Claude may still be sorting on the server. Tracks it finishes are saved.",
+  },
+};
+
+// No in-place retry: it would re-bill without the cost preview on /review.
+function Failed({
+  reason,
+  message,
+  canReview,
+}: Extract<ClassifyState, { phase: "failed" }>) {
+  const { title, note } = FAILED[reason];
+  return (
+    <PageShell title={title}>
+      {(message || note) && (
+        <div className="max-w-xl space-y-2">
+          {message && (
+            <p className="text-[var(--color-text-secondary)]">{message}</p>
+          )}
+          {note && (
+            <p className="text-sm text-[var(--color-text-tertiary)]">{note}</p>
+          )}
+        </div>
+      )}
+      <div className="-ml-1 mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+        {canReview && (
+          <ButtonLink href="/review">Back to categories</ButtonLink>
+        )}
+        <ButtonLink href="/" variant={canReview ? "ghost" : "primary"}>
+          Home
+        </ButtonLink>
       </div>
     </PageShell>
   );
