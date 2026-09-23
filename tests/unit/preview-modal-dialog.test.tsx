@@ -75,3 +75,59 @@ describe("PlaylistPreviewModal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe("PlaylistPreviewModal staleness", () => {
+  it("never shows one playlist's tracks under another's name", async () => {
+    // Switching playlists while the modal stays open must not leave the
+    // previous list on screen under the new title, even for one frame.
+    let release: ((v: unknown) => void) | null = null;
+    const pending = new Promise((r) => {
+      release = r;
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("p2")) {
+        await pending;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tracks: [{ id: "t2", title: "Beta", artist_name: "Artist Two" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tracks: [{ id: "t1", title: "Alpha", artist_name: "Artist One" }],
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { rerender } = render(
+      <PlaylistPreviewModal
+        open
+        playlistId="p1"
+        title="First"
+        onClose={vi.fn()}
+      />,
+    );
+    await screen.findByText("Alpha");
+
+    rerender(
+      <PlaylistPreviewModal
+        open
+        playlistId="p2"
+        title="Second"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Second")).toBeTruthy();
+    expect(screen.queryByText("Alpha")).toBeNull();
+
+    release!(null);
+    await screen.findByText("Beta");
+  });
+});

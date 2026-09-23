@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Search, Check } from "lucide-react";
 import type { TrackLookupEntry } from "./CategoryCard";
@@ -24,12 +24,17 @@ export function TrackSearchModal({
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
+  // Reset on open, during render rather than in an effect — a `key` remount at
+  // the call site would be the other option, but it tears down AnimatePresence
+  // and the modal loses its exit animation.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setQuery("");
       setPicked(new Set());
     }
-  }, [open]);
+  }
 
   const tracks = useMemo(() => Object.values(trackLookup), [trackLookup]);
 

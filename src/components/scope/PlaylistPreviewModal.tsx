@@ -27,10 +27,19 @@ export function PlaylistPreviewModal({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
-  useEffect(() => {
-    if (!open) return;
+  // Clear during render, not in the effect: an effect reset paints one frame of
+  // the previous playlist's tracks under the new title before it runs. This is
+  // React's documented "adjusting state when a prop changes".
+  const request = !open ? "closed" : liked ? "liked" : (playlistId ?? "");
+  const [loadedFor, setLoadedFor] = useState(request);
+  if (loadedFor !== request) {
+    setLoadedFor(request);
     setTracks(null);
     setError(null);
+  }
+
+  useEffect(() => {
+    if (!open) return;
     let cancelled = false;
     const url = liked
       ? "/api/spotify/playlist-tracks?liked=true"
@@ -129,7 +138,7 @@ export function PlaylistPreviewModal({
               )}
               {error && (
                 <p className="text-[var(--color-text-secondary)]">
-                  Couldn't load tracks: {error}
+                  Couldn&#39;t load tracks: {error}
                 </p>
               )}
               {tracks && tracks.length === 0 && (
