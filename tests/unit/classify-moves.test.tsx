@@ -92,10 +92,10 @@ describe("moveMessage", () => {
 
   it("says when the song also left other playlists", () => {
     expect(moveMessage("SAD!", "Bedroom Pop Intimacy", 1)).toBe(
-      "‘SAD!’ → Bedroom Pop Intimacy. Also left 1 other playlist.",
+      "‘SAD!’ → Bedroom Pop Intimacy. Also left 1 other category.",
     );
     expect(moveMessage("SAD!", "Bedroom Pop Intimacy", 3)).toBe(
-      "‘SAD!’ → Bedroom Pop Intimacy. Also left 3 other playlists.",
+      "‘SAD!’ → Bedroom Pop Intimacy. Also left 3 other categories.",
     );
   });
 });

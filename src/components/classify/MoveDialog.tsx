@@ -3,6 +3,8 @@ import { useRef, useState, type KeyboardEvent } from "react";
 import { Dialog } from "@/src/components/design/Dialog";
 import { Button } from "@/src/components/design/Button";
 import { Input } from "@/src/components/design/Input";
+import { Tab } from "@/src/components/graphics/Tab";
+import type { Temperature } from "@/src/lib/sleeves/temperature";
 
 export interface MovingSong {
   trackId: string;
@@ -13,7 +15,12 @@ export interface MovingSong {
 interface Props {
   song: MovingSong | null;
   /** Library order. Never ordered or annotated by the model's scores. */
-  playlists: ReadonlyArray<{ id: string; name: string }>;
+  playlists: ReadonlyArray<{
+    id: string;
+    name: string;
+    catalogueNo: number;
+    temperature: Temperature;
+  }>;
   onPick: (categoryId: string) => void;
   onClose: () => void;
 }
@@ -82,12 +89,11 @@ export function MoveDialog({ song, playlists, onPick, onClose }: Props) {
         </Button>
       }
     >
-      <div className="sticky top-0 z-10 bg-[var(--color-bg-elevated)] pb-3">
+      <div className="sticky top-0 z-10 bg-card pb-3">
         <Input
           ref={filterRef}
           type="search"
-          aria-label="Filter playlists"
-          placeholder="Filter playlists"
+          label="Filter categories"
           autoComplete="off"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -95,24 +101,34 @@ export function MoveDialog({ song, playlists, onPick, onClose }: Props) {
         />
       </div>
       {options.length > 0 ? (
-        <ul ref={listRef} onKeyDown={onListKey} className="-mx-panel">
+        <ul
+          ref={listRef}
+          onKeyDown={onListKey}
+          className="divide-y divide-rule"
+        >
           {options.map((p) => (
             <li key={p.id}>
               <button
                 type="button"
                 data-enter-target={p.id === enterTarget || undefined}
                 onClick={() => onPick(p.id)}
-                className="block w-full px-panel py-2 text-left font-[family-name:var(--font-display)] text-lg text-[var(--color-text-secondary)] transition-colors duration-200 hover:bg-[var(--color-bg-surface)] hover:text-[var(--color-text-primary)] focus-visible:outline-offset-[-2px] data-enter-target:bg-[var(--color-bg-surface)] data-enter-target:text-[var(--color-text-primary)]"
+                className="flex min-h-11 w-full items-center gap-3 rounded-[3px] px-2 py-2.5 text-left font-semibold text-ink-2 transition-colors duration-180 ease-out hover:bg-paper-deep hover:text-ink focus-visible:outline-offset-[-2px] data-enter-target:bg-tint data-enter-target:text-ink"
               >
-                {p.name}
+                {/* The catalogue tab: why this list's order isn't the
+                    index's. Its name is the playlist's alone. */}
+                <Tab
+                  aria-hidden
+                  catalogueNo={p.catalogueNo}
+                  temperature={p.temperature}
+                  size="review"
+                />
+                <span className="min-w-0 truncate">{p.name}</span>
               </button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="py-2 text-[var(--color-text-tertiary)]">
-          No playlist matches.
-        </p>
+        <p className="py-2 text-ink-2">No category matches.</p>
       )}
     </Dialog>
   );

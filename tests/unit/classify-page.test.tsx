@@ -32,8 +32,8 @@ const AT = "2026-09-01T00:00:00.000Z";
 const SAD = {
   matches: [
     { category_id: "emo", score: 87 },
-    { category_id: "bedroom", score: 70 },
-    { category_id: "drive", score: 66 },
+    { category_id: "bedroom", score: 71 },
+    { category_id: "drive", score: 67 },
   ],
   classified_at: AT,
   override: null,
@@ -72,14 +72,14 @@ function library(extra: { unsorted?: boolean; categories?: boolean } = {}) {
     assignments: {
       t1: SAD,
       t2: {
-        matches: [{ category_id: "bedroom", score: 90 }],
+        matches: [{ category_id: "bedroom", score: 91 }],
         classified_at: AT,
         override: null,
       },
       t3: {
         matches: [
           { category_id: "emo", score: 72 },
-          { category_id: "drive", score: 40 },
+          { category_id: "drive", score: 41 },
         ],
         classified_at: AT,
         override: null,
@@ -177,25 +177,33 @@ type Reply = { status: number; body: unknown };
 let cacheReplies: Reply[] = [];
 let patchReplies: Reply[] = [];
 const patches: unknown[] = [];
+// What GET /api/status reports per category, as the run's batches land.
+let statusCounts: Record<string, number> = {};
 
 function serve(...replies: Reply[]) {
   cacheReplies = replies;
 }
 const ok = (body: unknown): Reply => ({ status: 200, body });
 
-let wide = true;
+// The viewport the page's media queries see; a fine pointer is assumed.
+let viewport = 1440;
+const minWidth = (query: string) => {
+  const m = /min-width:\s*([\d.]+)rem/.exec(query);
+  return m ? Number(m[1]) * 16 : Infinity;
+};
 
 beforeEach(() => {
   FakeEventSource.opened = [];
   cacheReplies = [];
   patchReplies = [];
   patches.length = 0;
-  wide = true;
+  statusCounts = {};
+  viewport = 1440;
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal(
     "matchMedia",
     vi.fn((query: string) => ({
-      matches: query.includes("min-width") ? wide : false,
+      matches: minWidth(query) <= viewport,
       media: query,
       addEventListener: () => {},
       removeEventListener: () => {},
@@ -220,6 +228,11 @@ beforeEach(() => {
         const reply = patchReplies.shift() ?? ok({ ok: true });
         return new Response(JSON.stringify(reply.body), {
           status: reply.status,
+        });
+      }
+      if (url === "/api/status" && method === "GET") {
+        return new Response(JSON.stringify({ category_counts: statusCounts }), {
+          status: 200,
         });
       }
       throw new Error(`unexpected ${method} ${url}`);
@@ -262,7 +275,7 @@ const sentPatches = () =>
     .mocked(fetch)
     .mock.calls.filter(([, init]) => init?.method === "PATCH")
     .map(([, init]) => JSON.parse(String(init?.body)) as unknown);
-const UNSAVED = "Confidence isn't saved until Apply to Spotify.";
+const UNSAVED = "The fit isn't saved until Apply to Spotify.";
 
 // ---- loading and the paid run -----------------------------------------------
 
@@ -401,6 +414,139 @@ describe("/classify — the paid run", () => {
       screen.getByRole("link", { name: "Back to categories" }),
     ).toBeInTheDocument();
   });
+
+  // Spec §7.4: the strip holds its room before the library arrives.
+  it("prints the top strip from the first render", () => {
+    serve(ok(library({ unsorted: true })));
+    renderPage();
+    expect(document.querySelector("[data-action-bar]")).not.toBeNull();
+  });
+
+  it("keeps the progress in the top strip while it runs", async () => {
+    serve(ok(library({ unsorted: true })));
+    renderPage();
+    await screen.findByRole("progressbar");
+    const bar = document.querySelector<HTMLElement>("[data-action-bar]")!;
+    expect(within(bar).getByRole("progressbar")).toBeInTheDocument();
+    expect(barStatus()).toHaveTextContent("Waiting for the first batch");
+    act(() =>
+      FakeEventSource.opened[0]!.emit("progress", { done: 3, total: 40 }),
+    );
+    expect(within(bar).getByText("3 of 40")).toBeInTheDocument();
+    expect(barStatus()).toHaveTextContent("3 of 40 batches");
+  });
+
+  // /apply's layout: the line in the status, the band where the primary
+  // lands, and no progressbar inside the live region.
+  it("lays the running strip out like /apply's: the line left, the band right", async () => {
+    serve(ok(library({ unsorted: true })));
+    renderPage();
+    const band = await screen.findByRole("progressbar", { name: "Sorting" });
+    expect(barStatus()).not.toContainElement(band);
+    expect(within(barStatus()).queryByRole("progressbar")).toBeNull();
+  });
+
+  // Spec §4.4: the stream only reports batches; the counts come from the
+  // cache, read-only, after each one.
+  it("re-reads each category's count after every batch, and only reads", async () => {
+    serve(ok(library({ unsorted: true })));
+    statusCounts = { emo: 5, bedroom: 3, drive: 1, rust: 0 };
+    renderPage();
+    const crate = await screen.findByRole("img", { name: /41|categories/ });
+    const statusReads = () =>
+      vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/status");
+    // Before any batch the tabs carry the saved counts.
+    expect(within(crate).getAllByText("2")).toHaveLength(2);
+    expect(statusReads()).toHaveLength(0);
+
+    act(() =>
+      FakeEventSource.opened[0]!.emit("progress", { done: 1, total: 2 }),
+    );
+    await waitFor(() =>
+      expect(within(crate).getByText("5")).toBeInTheDocument(),
+    );
+    expect(within(crate).getByText("3")).toBeInTheDocument();
+    expect(statusReads()).toHaveLength(1);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([, init]) => !init?.method || init.method === "GET"),
+    ).toBe(true);
+  });
+
+  // Front to back, by the tabs' titles ("04 Rust Belt Folk").
+  const crateOrder = (crate: HTMLElement) =>
+    Array.from(crate.querySelectorAll("[title]"), (t) =>
+      t.getAttribute("title"),
+    );
+
+  // A first run starts with every count at 0, so the crate stands in
+  // catalogue order; the first report files it largest first, once.
+  it("files a first run's dividers by size when the first batch reports", async () => {
+    const first = library({ unsorted: true });
+    first.assignments = {} as never;
+    serve(ok(first));
+    statusCounts = { emo: 0, bedroom: 1, drive: 3, rust: 5 };
+    renderPage();
+    const crate = await screen.findByRole("img", { name: /categories/ });
+    expect(crateOrder(crate)).toEqual([
+      "01 Emo Rap Heartbreak",
+      "02 Bedroom Pop Intimacy",
+      "03 Late Night Drive",
+      "04 Rust Belt Folk",
+    ]);
+    act(() =>
+      FakeEventSource.opened[0]!.emit("progress", { done: 1, total: 4 }),
+    );
+    await waitFor(() =>
+      expect(
+        crateOrder(screen.getByRole("img", { name: /categories/ })),
+      ).toEqual([
+        "04 Rust Belt Folk",
+        "03 Late Night Drive",
+        "02 Bedroom Pop Intimacy",
+        "01 Emo Rap Heartbreak",
+      ]),
+    );
+  });
+
+  // With counts to start from, the order holds for the run: only counts and
+  // stack depths move while the tabs tick.
+  it("holds a re-run's divider order while the counts change", async () => {
+    serve(ok(library({ unsorted: true })));
+    statusCounts = { emo: 2, bedroom: 2, drive: 1, rust: 9 };
+    renderPage();
+    const crate = await screen.findByRole("img", { name: /categories/ });
+    const before = crateOrder(crate);
+    act(() =>
+      FakeEventSource.opened[0]!.emit("progress", { done: 1, total: 2 }),
+    );
+    await waitFor(() =>
+      expect(within(crate).getByText("9")).toBeInTheDocument(),
+    );
+    expect(crateOrder(crate)).toEqual(before);
+    expect(before[0]).toBe("01 Emo Rap Heartbreak");
+  });
+
+  // A track's filed category is its top match: naming it would leak a score.
+  it("never names a song while it runs", async () => {
+    serve(ok(library({ unsorted: true })));
+    statusCounts = { emo: 3, bedroom: 3, drive: 2, rust: 1 };
+    renderPage();
+    await screen.findByRole("progressbar");
+    act(() =>
+      FakeEventSource.opened[0]!.emit("progress", { done: 1, total: 2 }),
+    );
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(([url]) => url === "/api/status"),
+      ).toBe(true),
+    );
+    const html = document.body.innerHTML;
+    for (const title of ["SAD!", "Revenge", "new one", ">drive<"]) {
+      expect(html).not.toContain(title);
+    }
+  });
 });
 
 describe("/classify — nothing to tune", () => {
@@ -451,11 +597,13 @@ describe("/classify — tuning the fit", () => {
     ).toHaveLength(1);
   });
 
-  it("lists every playlist in library order with its track count", async () => {
+  // Largest first, like the crate and the press list; a tie keeps the
+  // catalogue order.
+  it("lists every playlist, largest first, with its track count", async () => {
     serve(ok(library()));
     renderPage();
     await ready();
-    const index = screen.getByRole("list", { name: "Playlists" });
+    const index = screen.getByRole("list", { name: "Categories" });
     expect(
       within(index)
         .getAllByRole("button")
@@ -468,11 +616,94 @@ describe("/classify — tuning the fit", () => {
     ]);
   });
 
+  // Brief §4.4 B: the ruler re-sorts the index. A move doesn't, so the row
+  // you are working in never runs away from you.
+  it("re-sorts the playlists when the cutoff moves, not when a song moves", async () => {
+    const lib = library();
+    lib.assignments = {
+      t1: {
+        matches: [
+          { category_id: "emo", score: 71 },
+          { category_id: "bedroom", score: 91 },
+        ],
+        classified_at: AT,
+        override: null,
+      },
+      t2: {
+        matches: [{ category_id: "bedroom", score: 81 }],
+        classified_at: AT,
+        override: null,
+      },
+      t3: {
+        matches: [{ category_id: "emo", score: 97 }],
+        classified_at: AT,
+        override: null,
+      },
+    } as never;
+    serve(ok(lib));
+    renderPage();
+    await ready();
+    const order = () =>
+      within(screen.getByRole("list", { name: "Categories" }))
+        .getAllByRole("button")
+        .map((b) => b.getAttribute("aria-label"));
+    expect(order()).toEqual([
+      "Emo Rap Heartbreak, 2 tracks",
+      "Bedroom Pop Intimacy, 2 tracks",
+      "Late Night Drive, 0 tracks",
+      "Rust Belt Folk, 0 tracks",
+    ]);
+
+    fireEvent.change(screen.getByRole("slider", { name: "Fit" }), {
+      target: { value: "85" },
+    });
+    expect(order()).toEqual([
+      "Bedroom Pop Intimacy, 2 tracks",
+      "Emo Rap Heartbreak, 1 track",
+      "Late Night Drive, 0 tracks",
+      "Rust Belt Folk, 0 tracks",
+    ]);
+
+    await userEvent.click(row("Emo Rap Heartbreak"));
+    await userEvent.click(song("Move Revenge by XXXTENTACION"));
+    const dialog = screen.getByRole("dialog", { name: "Move ‘Revenge’ to…" });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Rust Belt Folk" }),
+    );
+    expect(order()).toEqual([
+      "Bedroom Pop Intimacy, 2 tracks",
+      "Emo Rap Heartbreak, 0 tracks",
+      "Late Night Drive, 0 tracks",
+      "Rust Belt Folk, 1 track",
+    ]);
+  });
+
+  it("prints the cutoff as a ruler from 40 to 95", async () => {
+    serve(ok(library()));
+    renderPage();
+    await ready();
+    const ruler = screen.getByRole("slider", { name: "Fit" });
+    expect(ruler).toHaveAttribute("min", "40");
+    expect(ruler).toHaveAttribute("max", "95");
+  });
+
+  // A cutoff saved outside the ruler must still be shown where it is.
+  it("stretches the ruler to a saved cutoff outside 40 to 95", async () => {
+    const lib = library();
+    lib.config.confidence_threshold = 30;
+    serve(ok(lib));
+    renderPage();
+    await ready();
+    const ruler = screen.getByRole("slider", { name: "Fit" });
+    expect(ruler).toHaveAttribute("min", "30");
+    expect(ruler).toHaveValue("30");
+  });
+
   it("uses a keyboard-operable slider that re-counts the playlists", async () => {
     serve(ok(library()));
     renderPage();
     await ready();
-    const slider = screen.getByRole("slider", { name: "Confidence" });
+    const slider = screen.getByRole("slider", { name: "Fit" });
     expect(slider).toHaveAttribute("type", "range");
     expect(slider).toHaveValue("65");
     fireEvent.change(slider, { target: { value: "80" } });
@@ -550,13 +781,47 @@ describe("/classify — tuning the fit", () => {
     renderPage();
     await ready();
     const text = document.body.textContent ?? "";
-    for (const score of ["87", "70", "66", "72", "90", "40"]) {
+    for (const score of ["87", "71", "67", "72", "91", "41"]) {
       expect(text).not.toContain(score);
     }
   });
 
+  // The phone strip has no room beside Apply: the ruler and its news sit
+  // together in a second row pinned under the strip, never a bottom bar.
+  it("pins the phone's ruler band under the top strip, above the list", async () => {
+    viewport = 390;
+    serve(ok(library()));
+    renderPage();
+    await ready();
+    const band = document.querySelector<HTMLElement>("[data-ruler-band]")!;
+    expect(band).toHaveClass("sticky", "top-strip");
+    expect(band).not.toHaveClass("bottom-0");
+    const index = screen.getByRole("list", { name: "Categories" });
+    // Before the list in the page, so it reads (and tabs) before it.
+    expect(
+      band.compareDocumentPosition(index) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps the ruler and its news together on a phone", async () => {
+    viewport = 390;
+    serve(ok(library()));
+    renderPage();
+    await ready();
+    const band = document.querySelector<HTMLElement>("[data-ruler-band]")!;
+    const ruler = within(band).getByRole("slider", { name: "Fit" });
+    fireEvent.change(ruler, { target: { value: "80" } });
+    expect(within(band).getByRole("status")).toHaveTextContent(UNSAVED);
+    expect(barStatus()).toBeEmptyDOMElement();
+    expect(
+      within(
+        document.querySelector<HTMLElement>("[data-action-bar]")!,
+      ).queryByRole("slider"),
+    ).toBeNull();
+  });
+
   it("opens each playlist in place on a phone, one at a time", async () => {
-    wide = false;
+    viewport = 390;
     serve(ok(library()));
     renderPage();
     await ready();
@@ -580,6 +845,76 @@ describe("/classify — tuning the fit", () => {
     await userEvent.click(bedroom);
     expect(bedroom).toHaveAttribute("aria-expanded", "false");
   });
+
+  // Below desk the open playlist's songs sit inside the index: re-sorting
+  // under them threw the list you were tuning off screen.
+  it("holds the order while a playlist is open on a phone, and re-sorts when it closes", async () => {
+    viewport = 390;
+    const lib = library();
+    lib.assignments = {
+      t1: {
+        matches: [
+          { category_id: "emo", score: 71 },
+          { category_id: "bedroom", score: 91 },
+        ],
+        classified_at: AT,
+        override: null,
+      },
+      t2: {
+        matches: [{ category_id: "bedroom", score: 81 }],
+        classified_at: AT,
+        override: null,
+      },
+      t3: {
+        matches: [{ category_id: "emo", score: 97 }],
+        classified_at: AT,
+        override: null,
+      },
+    } as never;
+    serve(ok(lib));
+    renderPage();
+    await ready();
+    const order = () =>
+      within(screen.getByRole("list", { name: "Categories" }))
+        .getAllByRole("button", { name: /, \d+ tracks?$/ })
+        .map((b) => b.getAttribute("aria-label"));
+    const slider = screen.getByRole("slider", { name: "Fit" });
+
+    await userEvent.click(row("Emo Rap Heartbreak"));
+    fireEvent.change(slider, { target: { value: "85" } });
+    expect(order()).toEqual([
+      "Emo Rap Heartbreak, 1 track",
+      "Bedroom Pop Intimacy, 2 tracks",
+      "Late Night Drive, 0 tracks",
+      "Rust Belt Folk, 0 tracks",
+    ]);
+
+    await userEvent.click(row("Emo Rap Heartbreak"));
+    expect(order()).toEqual([
+      "Bedroom Pop Intimacy, 2 tracks",
+      "Emo Rap Heartbreak, 1 track",
+      "Late Night Drive, 0 tracks",
+      "Rust Belt Folk, 0 tracks",
+    ]);
+
+    // Nothing open: the ruler re-sorts at once, as on a desk.
+    fireEvent.change(slider, { target: { value: "65" } });
+    expect(order()[0]).toBe("Emo Rap Heartbreak, 2 tracks");
+  });
+
+  // A tablet's strip has room beside Apply; only a phone needs the band.
+  it("puts the ruler in the top strip on a tablet, and opens playlists in place", async () => {
+    viewport = 800;
+    serve(ok(library()));
+    renderPage();
+    await ready();
+    const bar = document.querySelector<HTMLElement>("[data-action-bar]")!;
+    const ruler = within(bar).getByRole("slider", { name: "Fit" });
+    expect(document.querySelector("[data-ruler-band]")).toBeNull();
+    fireEvent.change(ruler, { target: { value: "80" } });
+    expect(barStatus()).toHaveTextContent(UNSAVED);
+    expect(row("Emo Rap Heartbreak")).toHaveAttribute("aria-expanded", "false");
+  });
 });
 
 // ---- keyboard ---------------------------------------------------------------
@@ -594,7 +929,7 @@ describe("/classify — the keyboard", () => {
     for (const stop of [
       row("Emo Rap Heartbreak"),
       song("Move SAD! by XXXTENTACION"),
-      screen.getByRole("slider", { name: "Confidence" }),
+      screen.getByRole("slider", { name: "Fit" }),
       screen.getByRole("button", { name: "Apply to Spotify" }),
     ]) {
       await userEvent.tab();
@@ -641,7 +976,7 @@ describe("/classify — the keyboard", () => {
 
   // On a phone the open playlist's songs sit inside the index.
   it("keeps the arrow keys inside the open playlist on a phone", async () => {
-    wide = false;
+    viewport = 390;
     serve(ok(library()));
     renderPage();
     await ready();
@@ -657,8 +992,25 @@ describe("/classify — the keyboard", () => {
     expect(song("Move drive by Current Blue")).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");
     expect(song("Move drive by Current Blue")).toHaveFocus();
+    // The ruler band sits above the list now, so Tab leaves the songs for
+    // the next stop after them: Apply (in place here, with no layout).
     await userEvent.tab();
-    expect(screen.getByRole("slider", { name: "Confidence" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Apply to Spotify" }),
+    ).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(song("Move drive by Current Blue")).toHaveFocus();
+  });
+
+  it("reaches the ruler before the list on a phone", async () => {
+    viewport = 390;
+    serve(ok(library()));
+    renderPage();
+    await ready();
+    await userEvent.tab();
+    expect(screen.getByRole("slider", { name: "Fit" })).toHaveFocus();
+    await userEvent.tab();
+    expect(row("Emo Rap Heartbreak")).toHaveFocus();
   });
 });
 
@@ -687,23 +1039,33 @@ describe("/classify — moving a song", () => {
       screen.getByRole("button", { name: "Move SAD! by XXXTENTACION" }),
     );
     const dialog = screen.getByRole("dialog", { name: "Move ‘SAD!’ to…" });
-    expect(
+    // Each option carries its catalogue tab (why library order differs from
+    // the index's size order); its name is the playlist's alone.
+    const options = () =>
       within(dialog)
         .getAllByRole("button")
-        .map((b) => b.textContent)
-        .filter((t) => t !== "Cancel"),
-    ).toEqual(["Bedroom Pop Intimacy", "Late Night Drive", "Rust Belt Folk"]);
+        .filter((b) => b.textContent !== "Cancel");
+    const named = (...names: string[]) =>
+      names.map((name) => within(dialog).getByRole("button", { name }));
+    expect(options()).toEqual(
+      named("Bedroom Pop Intimacy", "Late Night Drive", "Rust Belt Folk"),
+    );
+    expect(options().map((b) => b.textContent)).toEqual([
+      "02Bedroom Pop Intimacy",
+      "03Late Night Drive",
+      "04Rust Belt Folk",
+    ]);
 
+    // Brief §5: filters carry a visible label, not a placeholder.
+    expect(
+      within(dialog).getByText("Filter categories", { selector: "label" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByPlaceholderText(/./)).toBeNull();
     await userEvent.type(
-      within(dialog).getByRole("searchbox", { name: "Filter playlists" }),
+      within(dialog).getByRole("searchbox", { name: "Filter categories" }),
       "dri",
     );
-    expect(
-      within(dialog)
-        .getAllByRole("button")
-        .map((b) => b.textContent)
-        .filter((t) => t !== "Cancel"),
-    ).toEqual(["Late Night Drive"]);
+    expect(options()).toEqual(named("Late Night Drive"));
   });
 
   it("saves the move, re-counts, and says what happened", async () => {
@@ -723,7 +1085,7 @@ describe("/classify — moving a song", () => {
       override: { category_id: "rust" },
     });
     expect(barStatus()).toHaveTextContent(
-      "‘SAD!’ → Rust Belt Folk. Also left 2 other playlists.",
+      "‘SAD!’ → Rust Belt Folk. Also left 2 other categories.",
     );
     expect(row("Emo Rap Heartbreak")).toHaveAccessibleName(
       "Emo Rap Heartbreak, 1 track",
@@ -825,7 +1187,7 @@ describe("/classify — moving a song", () => {
     await userEvent.click(song("Move SAD! by XXXTENTACION"));
     const dialog = screen.getByRole("dialog", { name: "Move ‘SAD!’ to…" });
     const filter = within(dialog).getByRole("searchbox", {
-      name: "Filter playlists",
+      name: "Filter categories",
     });
     await waitFor(() => expect(filter).toHaveFocus());
     await userEvent.keyboard("{Enter}");
@@ -909,7 +1271,7 @@ describe("/classify — Apply to Spotify", () => {
     serve(ok(library()));
     renderPage();
     await ready();
-    const slider = screen.getByRole("slider", { name: "Confidence" });
+    const slider = screen.getByRole("slider", { name: "Fit" });
     fireEvent.change(slider, { target: { value: "80" } });
     expect(barStatus()).toHaveTextContent(UNSAVED);
     fireEvent.change(slider, { target: { value: "65" } });
@@ -920,7 +1282,7 @@ describe("/classify — Apply to Spotify", () => {
     serve(ok(library()));
     renderPage();
     await ready();
-    const slider = screen.getByRole("slider", { name: "Confidence" });
+    const slider = screen.getByRole("slider", { name: "Fit" });
     await moveSadTo("Rust Belt Folk");
     fireEvent.change(slider, { target: { value: "80" } });
     expect(barStatus()).toHaveTextContent(UNSAVED);
@@ -936,7 +1298,7 @@ describe("/classify — Apply to Spotify", () => {
     serve(ok(library()));
     renderPage();
     await ready();
-    fireEvent.change(screen.getByRole("slider", { name: "Confidence" }), {
+    fireEvent.change(screen.getByRole("slider", { name: "Fit" }), {
       target: { value: "80" },
     });
     await userEvent.click(
@@ -962,9 +1324,12 @@ describe("/classify — Apply to Spotify", () => {
     );
     expect(router.push).not.toHaveBeenCalled();
     expect(apply).toBeEnabled();
+    // The lock taken while it saved lets go, so the nav works again.
+    expect(screen.getByTestId("nav-lock")).toHaveTextContent("open");
   });
 
-  it("can't be pressed twice while the setting saves", async () => {
+  // Leaving while the cutoff saves would open /apply on the old one.
+  it("can't be pressed twice, or left, while the setting saves", async () => {
     serve(ok(library()));
     renderPage();
     await ready();
@@ -973,9 +1338,13 @@ describe("/classify — Apply to Spotify", () => {
       () => new Promise<Response>((resolve) => (answer = resolve)),
     );
     const apply = screen.getByRole("button", { name: "Apply to Spotify" });
+    expect(screen.getByTestId("nav-lock")).toHaveTextContent("open");
     await userEvent.click(apply);
     expect(apply).toBeDisabled();
     expect(apply).toHaveAttribute("aria-busy", "true");
+    await waitFor(() =>
+      expect(screen.getByTestId("nav-lock")).toHaveTextContent("locked"),
+    );
     await act(async () => answer(new Response("{}", { status: 200 })));
     expect(router.push).toHaveBeenCalledTimes(1);
   });

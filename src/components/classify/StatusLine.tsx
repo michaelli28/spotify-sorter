@@ -1,15 +1,14 @@
 "use client";
 import type { RefObject } from "react";
 import { motion } from "framer-motion";
-import clsx from "clsx";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import type { Assignment } from "@/src/lib/cache";
 import { countLabel } from "./PlaylistIndex";
 import type { RunSummary } from "./useClassifyRun";
 
 /**
- * One line of news in the action bar: the run just paid for, a move, an
- * unsaved setting, an error.
+ * One line of news in the top strip: the run just paid for, a move, an
+ * unsaved cutoff, an error.
  */
 export type Status =
   | { kind: "summary"; id: number; summary: RunSummary }
@@ -57,41 +56,44 @@ export function StatusLine({
           Sorted {countLabel(status.summary.sorted)} for $
           {status.summary.costUsd.toFixed(2)}
           {status.summary.skipped > 0 && (
-            <span className="text-[var(--color-warning)]">
+            <span className="text-warn-ink">
               {" "}
-              · {status.summary.skipped.toLocaleString()} couldn&apos;t be
-              placed
+              · {status.summary.skipped.toLocaleString("en-US")} couldn&apos;t
+              be placed
             </span>
           )}
         </span>
       )}
       {status.kind === "moved" && (
         <>
-          <span className="truncate">{status.text}</span>
+          <span className="truncate" title={status.text}>
+            {status.text}
+          </span>
           <button
             ref={undoRef}
             type="button"
             onClick={() => onUndo(status)}
-            className={clsx(
-              "shrink-0 text-[var(--color-text-primary)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition-colors duration-200 hover:decoration-[var(--color-text-primary)]",
-              // The status line clips overflow, so focus stays inside the word.
-              "focus-visible:decoration-[var(--color-accent)] focus-visible:decoration-2 focus-visible:outline-none",
-            )}
+            className={
+              // The line clips overflow, so the global ring is drawn inset.
+              "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-[3px] px-1.5 font-medium text-ink underline decoration-rule-strong decoration-[1.5px] underline-offset-[6px] transition-[text-decoration-color] duration-180 ease-out hover:decoration-ink focus-visible:outline-offset-[-2px]"
+            }
           >
             Undo
           </button>
         </>
       )}
       {status.kind === "note" && (
-        <span className="truncate">{status.text}</span>
+        <span className="truncate" title={status.text}>
+          {status.text}
+        </span>
       )}
       {status.kind === "warning" && (
-        <span className="truncate text-[var(--color-warning)]">
+        <span className="truncate text-warn-ink" title={status.text}>
           {status.text}
         </span>
       )}
       {status.kind === "error" && (
-        <span className="truncate text-[var(--color-danger)]">
+        <span className="truncate text-danger" title={status.text}>
           {status.text}
         </span>
       )}

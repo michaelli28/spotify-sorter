@@ -52,5 +52,5 @@ export function moveMessage(
 ): string {
   const moved = `‘${title}’ → ${toName}.`;
   if (otherLeft === 0) return moved;
-  return `${moved} Also left ${otherLeft} other playlist${otherLeft === 1 ? "" : "s"}.`;
+  return `${moved} Also left ${otherLeft} other ${otherLeft === 1 ? "category" : "categories"}.`;
 }

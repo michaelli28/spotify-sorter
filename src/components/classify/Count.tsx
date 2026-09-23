@@ -1,25 +1,29 @@
 "use client";
 import { useEffect } from "react";
 import { motion, useSpring, useTransform } from "framer-motion";
-import { SPRING, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { SPRING_SNAP } from "@/src/components/design/motion";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
-const { stiffness, damping, mass } = SPRING;
+const { stiffness, damping, mass } = SPRING_SNAP;
+const plain = (n: number) => n.toLocaleString("en-US");
 
 /**
- * A track count that re-flows on the brief's spring when the slider or a move
- * changes it, so each playlist settles in proportion to how much it changed.
- * Hidden from assistive tech: the owning control carries the exact number.
+ * A track count that ticks to its new value on SPRING_SNAP (brief §4.4 B)
+ * when the ruler, a move or a batch changes it. Hidden from assistive tech:
+ * the owning control carries the exact number.
  */
 export function Count({
   value,
+  format = plain,
   className,
 }: {
   value: number;
+  format?: (n: number) => string;
   className?: string;
 }) {
   const { reduced } = useMotionConfig();
   const spring = useSpring(value, { stiffness, damping, mass });
-  const text = useTransform(spring, (v) => Math.round(v).toLocaleString());
+  const text = useTransform(spring, (v) => format(Math.round(v)));
 
   useEffect(() => {
     if (reduced) spring.jump(value);

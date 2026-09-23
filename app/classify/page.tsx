@@ -1,8 +1,11 @@
 "use client";
 import { PageShell } from "@/src/components/design/PageShell";
+import { ActionBar } from "@/src/components/design/ActionBar";
 import { ButtonLink } from "@/src/components/design/Button";
 import { useNavLock } from "@/src/components/design/NavLock";
-import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { ProgressBand } from "@/src/components/design/ProgressBand";
+import { RunLine } from "@/src/components/classify/RunLine";
+import { RunningView } from "@/src/components/classify/RunningView";
 import { TuneView } from "@/src/components/classify/TuneView";
 import {
   useClassifyRun,
@@ -11,7 +14,8 @@ import {
 } from "@/src/components/classify/useClassifyRun";
 
 // One component owns the stream for the whole visit: every state below is a
-// swap inside it, never a remount, so the paid run opens once.
+// swap inside it, never a remount, so the paid run opens once. Each state
+// prints the top strip, so it holds its room from the first render.
 export default function ClassifyPage() {
   const state = useClassifyRun();
   // Leaving mid-run abandons the stream (the server keeps going unwatched).
@@ -19,17 +23,41 @@ export default function ClassifyPage() {
 
   switch (state.phase) {
     case "loading":
-      return <PageShell>{null}</PageShell>;
+      return (
+        <>
+          <ActionBar end={null} />
+          <PageShell>{null}</PageShell>
+        </>
+      );
     case "running":
-      return <Running progress={state.progress} />;
+      return (
+        <>
+          {/* Nothing to press while it runs. As on /apply, the band sits
+              where Apply to Spotify lands when the run ends. */}
+          <ActionBar
+            status={<RunLine progress={state.progress} />}
+            end={
+              <ProgressBand
+                value={state.progress?.done ?? 0}
+                total={state.progress?.total ?? 0}
+                label="Sorting"
+                className="w-28 tab:w-56"
+              />
+            }
+          />
+          <RunningView
+            library={state.library}
+            batchesDone={state.progress?.done ?? 0}
+          />
+        </>
+      );
     case "empty":
       return (
-        <PageShell title="No categories yet.">
+        <>
           {/* Not /review: with no categories it proposes, and pays, on load. */}
-          <ButtonLink href="/" variant="ghost" className="-ml-1">
-            Home
-          </ButtonLink>
-        </PageShell>
+          <ActionBar end={<ButtonLink href="/">Home</ButtonLink>} />
+          <PageShell title="No categories yet.">{null}</PageShell>
+        </>
       );
     case "failed":
       return <Failed {...state} />;
@@ -40,28 +68,6 @@ export default function ClassifyPage() {
         </PageShell>
       );
   }
-}
-
-function Running({
-  progress,
-}: Pick<Extract<ClassifyState, { phase: "running" }>, "progress">) {
-  return (
-    <PageShell title="Listening through your library…">
-      <div className="max-w-xl">
-        <ProgressBar
-          value={progress?.done ?? 0}
-          total={progress?.total ?? 0}
-          label="Sorting"
-        />
-        {progress && (
-          <p className="mt-3 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--color-text-tertiary)]">
-            {progress.done.toLocaleString("en-US")} of{" "}
-            {progress.total.toLocaleString("en-US")}
-          </p>
-        )}
-      </div>
-    </PageShell>
-  );
 }
 
 const FAILED: Record<FailReason, { title: string; note: string | null }> = {
@@ -86,25 +92,29 @@ function Failed({
 }: Extract<ClassifyState, { phase: "failed" }>) {
   const { title, note } = FAILED[reason];
   return (
-    <PageShell title={title}>
-      {(message || note) && (
-        <div className="max-w-xl space-y-2">
-          {message && (
-            <p className="text-[var(--color-text-secondary)]">{message}</p>
-          )}
-          {note && (
-            <p className="text-sm text-[var(--color-text-tertiary)]">{note}</p>
-          )}
-        </div>
-      )}
-      <div className="-ml-1 mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-2">
-        {canReview && (
-          <ButtonLink href="/review">Back to categories</ButtonLink>
+    <>
+      <ActionBar
+        end={
+          canReview ? (
+            <ButtonLink href="/review">Back to categories</ButtonLink>
+          ) : (
+            <ButtonLink href="/">Home</ButtonLink>
+          )
+        }
+      />
+      <PageShell title={title}>
+        {(message || note) && (
+          <div className="max-w-[65ch] space-y-2">
+            {message && <p className="text-lead text-ink-2">{message}</p>}
+            {note && <p className="text-ink-2">{note}</p>}
+          </div>
         )}
-        <ButtonLink href="/" variant={canReview ? "ghost" : "primary"}>
-          Home
-        </ButtonLink>
-      </div>
-    </PageShell>
+        {canReview && (
+          <ButtonLink href="/" variant="ghost" className="mt-8">
+            Home
+          </ButtonLink>
+        )}
+      </PageShell>
+    </>
   );
 }

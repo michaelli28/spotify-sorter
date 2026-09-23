@@ -18,7 +18,13 @@ export type FailReason = "unreadable" | "stopped" | "disconnected";
 
 export type ClassifyState =
   | { phase: "loading" }
-  | { phase: "running"; progress: { done: number; total: number } | null }
+  | {
+      phase: "running";
+      /** Batches of tracks, as the stream counts them. null until the first. */
+      progress: { done: number; total: number } | null;
+      /** As read before the run: the crate is drawn from it. */
+      library: Library;
+    }
   | { phase: "ready"; library: Library; summary: RunSummary | null }
   | { phase: "empty" }
   | {
@@ -91,7 +97,7 @@ export function useClassifyRun(): ClassifyState {
         return;
       }
 
-      settle({ phase: "running", progress: null });
+      settle({ phase: "running", progress: null, library });
       const es = new EventSource("/api/llm/classify");
       stream = es;
       es.addEventListener("progress", (e) => {
@@ -101,7 +107,7 @@ export function useClassifyRun(): ClassifyState {
           done: number;
           total: number;
         };
-        settle({ phase: "running", progress: { done, total } });
+        settle({ phase: "running", progress: { done, total }, library });
       });
       es.addEventListener("done", () => {
         es.close();

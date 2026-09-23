@@ -18,9 +18,13 @@ import { getEventCoordinates } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
 import { ActionBar } from "@/src/components/design/ActionBar";
 import { Button } from "@/src/components/design/Button";
-import { EASE_OUT_EXPO, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { useNavLock } from "@/src/components/design/NavLock";
+import { EASE_OUT } from "@/src/components/design/motion";
+import { AlbumArt } from "@/src/components/graphics/AlbumArt";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import { categoryMembers } from "@/src/lib/classification/threshold";
-import { ConfidenceSlider } from "./ConfidenceSlider";
+import { effectiveTemperature } from "@/src/lib/sleeves/lexicon";
+import { CutoffRuler, RULER_MIN } from "./CutoffRuler";
 import { MoveDialog, type MovingSong } from "./MoveDialog";
 import { PlaylistIndex, type IndexEntry } from "./PlaylistIndex";
 import { SongList, type Song } from "./SongList";
@@ -39,10 +43,14 @@ import {
   type DropTarget,
 } from "./moves";
 import type { Library, RunSummary } from "./useClassifyRun";
-import { useMediaQuery } from "./useMediaQuery";
+import { DESK_UP, TAB_UP, useMediaQuery } from "@/src/hooks/useMediaQuery";
+
+/** Dragging a song needs a mouse and room for the index beside the list. */
+const DRAG_UP = `(pointer: fine) and ${DESK_UP}`;
 
 type DragData = DragSource & { title: string; artist: string };
 type DropData = DropTarget & { name: string };
+type Playlist = Omit<IndexEntry, "count">;
 
 async function saveToCache(body: unknown): Promise<boolean> {
   try {
@@ -57,16 +65,27 @@ async function saveToCache(body: unknown): Promise<boolean> {
   }
 }
 
-// Stable id, so the line doesn't fade in again on every slider step.
+// Stable id, so the line doesn't fade in again on every ruler step.
 const UNSAVED: Status = {
   kind: "warning",
   id: -1,
-  text: "Confidence isn't saved until Apply to Spotify.",
+  text: "The fit isn't saved until Apply to Spotify.",
 };
 
 const dragData = (a: Active | Over | null) =>
   a?.data.current as DragData | undefined;
 const dropData = (o: Over | null) => o?.data.current as DropData | undefined;
+
+/** Largest first; a tie keeps the catalogue order. */
+function bySize(
+  playlists: readonly Playlist[],
+  members: Map<string, Set<string>>,
+): string[] {
+  const size = (id: string) => members.get(id)?.size ?? 0;
+  return [...playlists]
+    .sort((a, b) => size(b.id) - size(a.id) || a.catalogueNo - b.catalogueNo)
+    .map((p) => p.id);
+}
 
 // The lifted song floats just above and right of the pointer, so the playlist
 // row under the pointer stays readable while you aim.
@@ -88,8 +107,8 @@ const abovePointer: Modifier = ({
 
 /**
  * The finished library: the index of playlists, one playlist's songs, and the
- * bar holding the slider and "Apply to Spotify". Nothing here saves the slider
- * until Apply: /label's blind study reads the saved value.
+ * cutoff ruler beside "Apply to Spotify". Nothing here saves the cutoff until
+ * Apply: /label's blind study reads the saved value.
  */
 export function TuneView({
   library,
@@ -100,8 +119,12 @@ export function TuneView({
 }) {
   const router = useRouter();
   const { reduced, fade } = useMotionConfig();
-  const wide = useMediaQuery("(min-width: 768px)");
-  const canDrag = useMediaQuery("(pointer: fine) and (min-width: 768px)");
+  // Desk: index and songs side by side. Below it, playlists open in place.
+  const desk = useMediaQuery(DESK_UP);
+  // The ruler sits in the top strip from a tablet up; a phone's strip has no
+  // room beside Apply, so there it gets a second row pinned under the strip.
+  const tab = useMediaQuery(TAB_UP);
+  const canDrag = useMediaQuery(DRAG_UP);
   const pointer = useSensor(PointerSensor, {
     // A click on a row opens "Move to…"; only a real drag moves it.
     activationConstraint: { distance: 6 },
@@ -109,10 +132,26 @@ export function TuneView({
   const dragSensors = useSensors(pointer);
   const noSensors = useSensors();
 
+  const playlists = useMemo<Playlist[]>(
+    () =>
+      Object.entries(library.categories).map(([id, c], i) => ({
+        id,
+        name: c.name,
+        catalogueNo: i + 1,
+        temperature: effectiveTemperature({ id, ...c }),
+      })),
+    [library.categories],
+  );
   const [assignments, setAssignments] = useState(library.assignments);
   const [saved, setSaved] = useState(library.config.confidence_threshold);
   const [threshold, setThreshold] = useState(saved);
-  // The status id current when the slider last moved: news after it outranks
+  // Re-sorted by the ruler only: a move never pulls a row out from under you.
+  const [order, setOrder] = useState(() =>
+    bySize(playlists, categoryMembers(library.assignments, saved)),
+  );
+  // On a desk one playlist always shows: the largest when the page opened.
+  const [first] = useState(() => order[0] ?? null);
+  // The status id current when the ruler last moved: news after it outranks
   // the unsaved note.
   const [sliderAt, setSliderAt] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
@@ -127,26 +166,39 @@ export function TuneView({
   const statusIds = useRef(0);
   const undoRef = useRef<HTMLButtonElement>(null);
   const saves = useRef<Promise<unknown>>(Promise.resolve());
+  // Leaving while the cutoff saves would open /apply on the old one.
+  useNavLock(saving);
 
-  const playlists = useMemo(
-    () =>
-      Object.entries(library.categories).map(([id, c]) => ({
-        id,
-        name: c.name,
-      })),
-    [library.categories],
-  );
   const members = useMemo(
     () => categoryMembers(assignments, threshold),
     [assignments, threshold],
   );
-  const entries: IndexEntry[] = playlists.map((p) => ({
-    ...p,
-    count: members.get(p.id)?.size ?? 0,
-  }));
-  // On a wide screen one playlist is always showing; on a phone none may be open.
-  const current = wide ? (picked ?? playlists[0]?.id ?? null) : picked;
-  const nameOf = (id: string) => playlists.find((p) => p.id === id)?.name ?? "";
+  // Bars share one scale, the most any playlist holds at the ruler's lowest
+  // mark, so raising the cutoff visibly empties them.
+  const scale = useMemo(() => {
+    const low = categoryMembers(assignments, Math.min(RULER_MIN, saved));
+    return Math.max(0, ...[...low.values()].map((s) => s.size));
+  }, [assignments, saved]);
+  const byId = useMemo(
+    () => new Map(playlists.map((p) => [p.id, p])),
+    [playlists],
+  );
+  const entries: IndexEntry[] = order.flatMap((id) => {
+    const p = byId.get(id);
+    return p ? [{ ...p, count: members.get(id)?.size ?? 0 }] : [];
+  });
+  const current = desk ? (picked ?? first) : picked;
+  const nameOf = (id: string) => byId.get(id)?.name ?? "";
+
+  // Below desk the open playlist's songs sit inside the index, so a re-sort
+  // would carry the list you are tuning off screen: the ruler's order waits
+  // until it closes.
+  const held = !desk && current !== null;
+  const [stale, setStale] = useState(false);
+  if (stale && !held) {
+    setStale(false);
+    setOrder(bySize(playlists, members));
+  }
 
   const songs: Song[] = Array.from((current && members.get(current)) || []).map(
     (id) => {
@@ -162,14 +214,14 @@ export function TuneView({
   // A phone opens playlists in place; closing the one above would otherwise
   // throw the tapped row off screen.
   useEffect(() => {
-    if (wide || !current) return;
+    if (desk || !current) return;
     document
       .querySelector(`[data-playlist="${CSS.escape(current)}"]`)
       ?.scrollIntoView?.({
         block: "start",
         behavior: reduced ? "auto" : "smooth",
       });
-  }, [wide, current, reduced]);
+  }, [desk, current, reduced]);
 
   // After the render that removed the control holding focus (Undo, or a row
   // that moved away and came back), focus the song if it is in the open list.
@@ -200,10 +252,12 @@ export function TuneView({
   function tune(value: number) {
     setThreshold(value);
     setSliderAt(++statusIds.current);
+    if (held) setStale(true);
+    else setOrder(bySize(playlists, categoryMembers(assignments, value)));
   }
 
   function pick(id: string) {
-    setPicked(!wide && picked === id ? null : id);
+    setPicked(!desk && picked === id ? null : id);
   }
 
   async function move(trackId: string, from: string, to: string) {
@@ -268,7 +322,7 @@ export function TuneView({
     onDragOver: ({ active, over }) =>
       over
         ? `${dragData(active)?.title} is over ${dropData(over)?.name}.`
-        : `${dragData(active)?.title} is not over a playlist.`,
+        : `${dragData(active)?.title} is not over a category.`,
     onDragEnd: ({ active, over }) =>
       dropDestination(dragData(active), dropData(over))
         ? `${dragData(active)?.title} moved to ${dropData(over)?.name}.`
@@ -278,7 +332,7 @@ export function TuneView({
 
   async function applyToSpotify() {
     setSaving(true);
-    // Only the slider: the prefix and model are /setup's to choose.
+    // Only the cutoff: the prefix and model are /setup's to choose.
     if (await save({ config: { confidence_threshold: threshold } })) {
       setSaved(threshold);
       router.push("/apply");
@@ -293,6 +347,19 @@ export function TuneView({
     );
   }
 
+  const statusLine = (
+    <StatusLine status={line} onUndo={undo} undoRef={undoRef} />
+  );
+
+  const ruler = (className: string) => (
+    <CutoffRuler
+      value={threshold}
+      onChange={tune}
+      saved={saved}
+      className={className}
+    />
+  );
+
   const openSongs = (id: string) =>
     songs.length === 0 ? (
       <Empty threshold={threshold} />
@@ -302,7 +369,11 @@ export function TuneView({
         categoryId={id}
         songs={songs}
         label={nameOf(id)}
-        pageSize={wide ? 100 : 50}
+        pageSize={desk ? 100 : 50}
+        columns={desk && songs.length > 8 ? 2 : 1}
+        // In the pane the numbers align with its heading; in place, the
+        // index is already outdented.
+        className={desk ? "-mx-2" : undefined}
         draggable={canDrag}
         onMove={(song) =>
           setMoving({ trackId: song.id, title: song.title, fromCategoryId: id })
@@ -313,16 +384,17 @@ export function TuneView({
   const index = (
     <PlaylistIndex
       playlists={entries}
-      mode={wide ? "select" : "expand"}
+      scale={scale}
+      mode={desk ? "select" : "expand"}
       current={current}
       onPick={pick}
       open={
-        !wide && current ? (
+        !desk && current ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={fade}
-            className="pb-6"
+            className="pt-2 pb-6"
           >
             {openSongs(current)}
           </motion.div>
@@ -336,7 +408,28 @@ export function TuneView({
     dragging !== null && overId !== null && overId !== dragging.fromCategoryId;
 
   return (
-    <>
+    // --ruler-band: the phone band's height, so the open row and focus can
+    // clear it (PlaylistIndex, SongList).
+    <div className="max-tab:[--ruler-band:6rem]">
+      {/* A phone's strip has no room beside Apply, so the ruler and its news
+          take a second row pinned under it: full width, above what they
+          change, and never a bottom bar. Fixed height, so a line of news
+          arriving never pushes the list. */}
+      {!tab && (
+        <div
+          data-ruler-band
+          className="paper-tooth sticky top-strip z-20 -mx-gutter mb-4 flex h-(--ruler-band) flex-col justify-center border-b border-rule-strong px-gutter tab:hidden"
+        >
+          {ruler("w-full")}
+          <p
+            role="status"
+            aria-live="polite"
+            className="flex min-h-11 min-w-0 items-center text-ink-2"
+          >
+            {statusLine}
+          </p>
+        </div>
+      )}
       <DndContext
         sensors={canDrag ? dragSensors : noSensors}
         collisionDetection={pointerWithin}
@@ -349,22 +442,29 @@ export function TuneView({
           setOverId(null);
         }}
       >
-        {wide ? (
-          <div className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)] gap-x-12">
-            <div className="sticky top-8 -ml-2 max-h-[calc(100dvh-9rem)] self-start overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+        {desk ? (
+          <div className="grid grid-cols-[minmax(0,22rem)_minmax(0,1fr)] gap-x-12 xl:gap-x-16">
+            {/* The index scrolls inside its own column, pinned under the strip. */}
+            {/* layoutScroll: the rows' FLIP measures through this scroll. */}
+            <motion.div
+              layoutScroll
+              className="sticky top-[calc(var(--strip-h)+var(--space-md))] -mx-2.5 max-h-[calc(100dvh-var(--strip-h)-2*var(--space-md))] self-start overflow-y-auto overscroll-contain px-px pb-1 [scrollbar-width:thin]"
+            >
               {index}
-            </div>
+            </motion.div>
             {current && (
               <motion.section
                 key={current}
-                initial={{ opacity: 0, y: 8 }}
+                aria-labelledby="open-playlist"
+                initial={{ opacity: 0, y: reduced ? 0 : 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={
-                  reduced ? fade : { duration: 0.3, ease: EASE_OUT_EXPO }
-                }
-                className="min-w-0"
+                transition={reduced ? fade : { duration: 0.24, ease: EASE_OUT }}
+                className="@container min-w-0"
               >
-                <h2 className="mb-6 font-[family-name:var(--font-display)] text-4xl leading-tight tracking-tight text-[var(--color-text-primary)]">
+                <h2
+                  id="open-playlist"
+                  className="mb-4 border-b border-rule pb-3 font-display text-title text-ink"
+                >
                   {nameOf(current)}
                 </h2>
                 {openSongs(current)}
@@ -372,25 +472,32 @@ export function TuneView({
             )}
           </div>
         ) : (
-          index
+          // Outdented like the desk column, so the tabs align with the title.
+          <div className="-mx-2.5">{index}</div>
         )}
         <DragOverlay
           dropAnimation={reduced || landing ? null : undefined}
           modifiers={[abovePointer]}
-          style={{ width: "min(24rem, 50vw)" }}
+          style={{ width: "min(22rem, 50vw)" }}
         >
           {dragging && (
             <motion.div
-              initial={{ scale: 1 }}
-              animate={{ scale: reduced ? 1 : 1.02 }}
-              transition={{ duration: 0.15, ease: EASE_OUT_EXPO }}
-              className="grid cursor-grabbing grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-baseline gap-x-4 border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-1.5 text-sm"
+              initial={{ scale: 1, rotate: 0 }}
+              animate={{
+                scale: reduced ? 1 : 1.02,
+                rotate: reduced ? 0 : -1,
+              }}
+              transition={{ duration: 0.18, ease: EASE_OUT }}
+              className="flex cursor-grabbing items-center gap-3 rounded-[3px] border border-ink bg-card px-2 py-1.5"
             >
-              <span className="truncate text-[var(--color-text-primary)]">
-                {dragging.title}
-              </span>
-              <span className="truncate text-[var(--color-text-secondary)]">
-                {dragging.artist}
+              <AlbumArt trackId={dragging.trackId} size={32} link={false} />
+              <span className="min-w-0 leading-snug">
+                <span className="block truncate font-semibold text-ink">
+                  {dragging.title}
+                </span>
+                <span className="block truncate text-ink-2">
+                  {dragging.artist}
+                </span>
               </span>
             </motion.div>
           )}
@@ -404,38 +511,27 @@ export function TuneView({
         onClose={() => setMoving(null)}
       />
 
+      {/* The ruler grows with the strip, leaving the status line room for
+          "The fit isn't saved until Apply to Spotify." from 1024px;
+          narrower, a long line truncates and keeps its full text as a title. */}
       <ActionBar
-        start={
-          <ConfidenceSlider
-            value={threshold}
-            onChange={tune}
-            className="w-[calc(100vw_-_2*var(--spacing-gutter)_-_10rem)] md:w-80"
-          />
-        }
-        status={<StatusLine status={line} onUndo={undo} undoRef={undoRef} />}
+        start={tab ? ruler("w-72 lg:w-80 xl:w-[32rem]") : undefined}
+        status={tab ? statusLine : null}
         end={
-          <Button
-            onClick={applyToSpotify}
-            disabled={saving}
-            aria-busy={saving || undefined}
-          >
+          <Button onClick={applyToSpotify} busy={saving}>
             Apply to Spotify
           </Button>
         }
       />
-    </>
+    </div>
   );
 }
 
 function Empty({ threshold }: { threshold: number }) {
   return (
     <div className="px-2">
-      <p className="text-[var(--color-text-secondary)]">
-        Nothing lands here at {threshold}.
-      </p>
-      <p className="mt-2 text-sm text-[var(--color-text-tertiary)]">
-        Spotify will get an empty playlist.
-      </p>
+      <p className="text-ink">Nothing lands here at {threshold}.</p>
+      <p className="mt-1 text-ink-2">Spotify will get an empty playlist.</p>
     </div>
   );
 }
