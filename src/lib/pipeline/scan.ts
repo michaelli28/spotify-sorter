@@ -100,7 +100,7 @@ export async function runScan(opts: {
 
   // If everything was cached, we have no new tracks to merge — but the
   // pre-existing tracks in cache.tracks remain valid.
-  let mergedTracks: typeof cache.tracks = { ...cache.tracks };
+  const mergedTracks: typeof cache.tracks = { ...cache.tracks };
   let mergedArtists: typeof cache.artists = { ...cache.artists };
   if (all.length > 0) {
     const unique = dedupeTracks(all);

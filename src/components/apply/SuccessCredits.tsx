@@ -101,7 +101,7 @@ export function SuccessCredits({ playlists, summary }: Props) {
         <p className="text-[var(--color-text-secondary)] leading-relaxed">
           Open Spotify desktop, multi-select the{" "}
           {summary.created > 0 ? "new" : ""} prefix-marked playlists,
-          right-click → <em>Add to Folder</em> → name it "Organized." Thirty
+          right-click → <em>Add to Folder</em> → name it &quot;Organized.&quot; Thirty
           seconds, never again.
         </p>
       </motion.div>

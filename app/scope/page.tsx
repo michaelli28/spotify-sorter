@@ -188,7 +188,7 @@ export default function ScopePage() {
           </motion.div>
           {filter.trim() && filteredPlaylists.length === 0 && (
             <p className="text-sm text-[var(--color-text-tertiary)] mt-6">
-              No playlists match "{filter}".
+              No playlists match &quot;{filter}&quot;.
             </p>
           )}
           <div className="pt-16 flex items-center gap-6">

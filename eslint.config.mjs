@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored third-party code: an in-repo Python venv, not project source.
+    "ml/venv/**",
+    // Generated coverage report, not project source.
+    "coverage/**",
   ]),
 ]);
 

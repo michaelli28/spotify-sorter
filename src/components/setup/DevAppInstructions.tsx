@@ -19,7 +19,7 @@ export function DevAppInstructions() {
         </li>
         <li>
           <span className="text-[var(--color-text-primary)]">2.</span> Use any
-          name (e.g. "SpotifySorter"). Description: anything.
+          name (e.g. &quot;SpotifySorter&quot;). Description: anything.
         </li>
         <li>
           <span className="text-[var(--color-text-primary)]">3.</span> Set the
