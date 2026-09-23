@@ -11,21 +11,32 @@ import { estimateClassifyCost } from "@/src/lib/llm/cost";
 
 type Reply = { status: number; body: unknown } | "hang";
 
-// The page reads two routes; each call takes the next queued reply, and the
-// last one repeats.
+// The page reads three routes; each call takes the next queued reply, and the
+// last one repeats. Keyed by path: the list route carries a ?limit.
 let queues: Record<string, Reply[]> = {};
 let calls: string[] = [];
 
-function stubFetch(replies: { cache: Reply[]; diff?: Reply[] }) {
+function stubFetch(replies: {
+  cache: Reply[];
+  /** Defaults to what the real route answers for the first cache reply. */
+  unsorted?: Reply[];
+  diff?: Reply[];
+}) {
+  const first = replies.cache[0];
   queues = {
     "/api/cache": replies.cache,
+    "/api/library/unsorted": replies.unsorted ?? [
+      first !== "hang" && first?.status === 200
+        ? arrivals(first.body as Library)
+        : "hang",
+    ],
     "/api/spotify/diff": replies.diff ?? ["hang"],
   };
   calls = [];
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const url = String(input);
     calls.push(url);
-    const queue = queues[url];
+    const queue = queues[new URL(url, "http://app").pathname];
     if (!queue) return Promise.reject(new Error(`unexpected fetch ${url}`));
     const reply = queue.length > 1 ? queue.shift()! : queue[0]!;
     if (reply === "hang") return new Promise<Response>(() => {});
@@ -45,6 +56,7 @@ function library({
   categories = 3,
   applied = 0,
   prefix = "✨",
+  artIds = false,
 }: {
   sorted?: number;
   unsorted?: number;
@@ -52,6 +64,8 @@ function library({
   /** How many categories already have a Spotify playlist. */
   applied?: number;
   prefix?: string;
+  /** Real-length track ids (22 base-62 characters), as the art route wants. */
+  artIds?: boolean;
 } = {}) {
   const tracks: Record<string, unknown> = {};
   const artists: Record<string, unknown> = {};
@@ -70,7 +84,7 @@ function library({
     };
   }
   for (let i = 0; i < unsorted; i++) {
-    tracks[`u${i}`] = {
+    tracks[artIds ? `u${i}`.padEnd(22, "x") : `u${i}`] = {
       artist_id: `ua${i}`,
       title: `New Song ${i}`,
       first_seen: new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString(),
@@ -106,6 +120,34 @@ function library({
   };
 }
 
+type Library = ReturnType<typeof library>;
+
+// What GET /api/library/unsorted answers: every unsorted track counted, the
+// labelling sample left off the list, newest scan first.
+function arrivals(lib: Library, blind: string[] = []): Reply {
+  const tracks = lib.tracks as Record<
+    string,
+    { artist_id: string; title: string; first_seen: string }
+  >;
+  const artists = lib.artists as Record<string, { name: string }>;
+  const seen = (id: string) => Date.parse(tracks[id]!.first_seen);
+  const ids = Object.keys(tracks)
+    .filter((id) => !(id in lib.assignments))
+    .sort((a, b) => seen(b) - seen(a));
+  return ok({
+    total: ids.length,
+    tracks: ids
+      .filter((id) => !blind.includes(id))
+      .map((id) => ({
+        id,
+        title: tracks[id]!.title,
+        artist: artists[tracks[id]!.artist_id]?.name ?? "",
+      })),
+  });
+}
+
+const listCalls = () =>
+  calls.filter((u) => u.startsWith("/api/library/unsorted"));
 const diffCalls = () => calls.filter((u) => u === "/api/spotify/diff");
 
 beforeEach(() => {
@@ -193,7 +235,10 @@ describe("/diff", () => {
     render(<DiffPage />);
     await screen.findByRole("button", { name: "Sort 11 tracks" });
 
-    const list = screen.getByRole("list", { name: "Waiting to be sorted." });
+    // The list is its own request, so it can land after the sentence.
+    const list = await screen.findByRole("list", {
+      name: "11 new tracks to sort.",
+    });
     const rows = within(list).getAllByRole("listitem");
     expect(
       rows.map((r) => within(r).getByText(/^New Song/).textContent),
@@ -208,22 +253,200 @@ describe("/diff", () => {
     stubFetch({ cache: [ok(library({ unsorted: 3 }))] });
     render(<DiffPage />);
     await screen.findByRole("button", { name: "Sort 3 tracks" });
-    expect(screen.getAllByText(/^New Song/)).toHaveLength(3);
+    expect(await screen.findAllByText(/^New Song/)).toHaveLength(3);
     expect(screen.queryByText(/more$/)).toBeNull();
   });
 
-  it("names the heading after the waiting tracks, not their count", async () => {
-    stubFetch({ cache: [ok(library({ unsorted: 297 }))] });
+  // Spec: the sentence is "N new tracks to sort", counted by the list route,
+  // which also counts the songs it leaves off the list.
+  it("says how many new tracks wait, counting the ones it can't list", async () => {
+    const lib = library({ unsorted: 297 });
+    stubFetch({ cache: [ok(lib)], unsorted: [arrivals(lib, ["u296"])] });
     render(<DiffPage />);
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Waiting to be sorted.",
+        name: "297 new tracks to sort.",
       }),
     ).toBeInTheDocument();
+    // The top strip fades in, so wait out its fade.
+    const sort = screen.getByRole("button", { name: "Sort 297 tracks" });
+    await waitFor(() => expect(sort).toBeVisible());
+    expect(await screen.findByText("and 289 more")).toBeInTheDocument();
+  });
+
+  it("says track, not tracks, for one", async () => {
+    stubFetch({ cache: [ok(library({ unsorted: 1 }))] });
+    render(<DiffPage />);
     expect(
-      screen.getByRole("button", { name: "Sort 297 tracks" }),
-    ).toBeVisible();
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "1 new track to sort.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  // Blind labelling: the list route drops the sample's songs. The cache the
+  // page also reads still has them; they must not come back from it.
+  it("never lists a song the list route left out", async () => {
+    const lib = library({ unsorted: 11 });
+    stubFetch({ cache: [ok(lib)], unsorted: [arrivals(lib, ["u10", "u7"])] });
+    render(<DiffPage />);
+    const list = await screen.findByRole("list", {
+      name: "11 new tracks to sort.",
+    });
+    expect(
+      within(list)
+        .getAllByText(/^New Song/)
+        .map((el) => el.textContent),
+    ).toEqual([9, 8, 6, 5, 4, 3, 2, 1].map((i) => `New Song ${i}`));
+    expect(screen.queryByText("New Song 10")).toBeNull();
+    expect(screen.queryByText("New Song 7")).toBeNull();
+    expect(screen.getByText("and 3 more")).toBeInTheDocument();
+  });
+
+  it("shows each arrival's cover and links its title to Spotify", async () => {
+    stubFetch({ cache: [ok(library({ unsorted: 2, artIds: true }))] });
+    const { container } = render(<DiffPage />);
+    const title = await screen.findByRole("link", { name: "New Song 1" });
+    const id = "u1".padEnd(22, "x");
+    expect(title).toHaveAttribute("href", `spotify:track:${id}`);
+    // next/image writes the resolved URL into src; the path is what matters.
+    const art = [...container.querySelectorAll("img")].map(
+      (img) => new URL(img.src).pathname,
+    );
+    expect(art).toContain(`/api/art/${id}`);
+  });
+
+  it("asks for the list only when tracks are waiting", async () => {
+    stubFetch({ cache: [ok(library())] });
+    render(<DiffPage />);
+    await screen.findByRole("heading", { name: "Nothing new to sort." });
+    expect(listCalls()).toEqual([]);
+  });
+
+  // The list is a sample of what waits; the way forward comes from the cache
+  // alone. A broken labelling sample fails the list route on purpose
+  // (src/lib/labeling/blind.ts), and must not take the page down with it.
+  it("keeps the way forward when the list can't be read, and lists again on Try again", async () => {
+    const lib = library({ unsorted: 3 });
+    stubFetch({
+      cache: [ok(lib)],
+      unsorted: [{ status: 500, body: { error: "boom" } }, arrivals(lib)],
+    });
+    render(<DiffPage />);
+
+    expect(
+      await screen.findByText("Couldn’t list the new tracks."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "3 new tracks to sort." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort 3 tracks" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Edit categories" }),
+    ).toHaveAttribute("href", "/review");
+    expect(
+      screen.getByRole("link", { name: "Change sources" }),
+    ).toHaveAttribute("href", "/scope");
+    expect(screen.queryByText(/New Song/)).toBeNull();
+    expect(screen.queryByText(/HTTP|500/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const list = await screen.findByRole("list", {
+      name: "3 new tracks to sort.",
+    });
+    expect(within(list).getAllByText(/^New Song/)).toHaveLength(3);
+    expect(screen.queryByText("Couldn’t list the new tracks.")).toBeNull();
+    expect(listCalls()).toHaveLength(2);
+    // Only the list is read again.
+    expect(calls.filter((u) => u === "/api/cache")).toHaveLength(1);
+    // Try again unmounts itself; focus waits with the list, not on <body>.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toContainElement(list);
+  });
+
+  it("treats a list from another version as a list it can't read", async () => {
+    stubFetch({
+      cache: [ok(library({ unsorted: 3 }))],
+      unsorted: [{ status: 409, body: { error: "cache_version_mismatch" } }],
+    });
+    render(<DiffPage />);
+    expect(
+      await screen.findByText("Couldn’t list the new tracks."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort 3 tracks" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/another version/)).toBeNull();
+  });
+
+  it("shows the way forward before the list arrives", async () => {
+    stubFetch({ cache: [ok(library({ unsorted: 3 }))], unsorted: ["hang"] });
+    render(<DiffPage />);
+    expect(
+      await screen.findByRole("heading", { name: "3 new tracks to sort." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort 3 tracks" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Edit categories" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Change sources" }),
+    ).toBeInTheDocument();
+  });
+
+  // Spotify's removed-tracks answer takes ~40s and can grow the note or empty
+  // it. Nothing may sit below it, or every control would move under the
+  // pointer long after the page settled.
+  describe("the removed-tracks note comes after every control", () => {
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const controls = () => [
+      ...screen.queryAllByRole("link"),
+      ...screen.queryAllByRole("button"),
+    ];
+
+    it("with tracks waiting: after the ways on and the list", async () => {
+      stubFetch({ cache: [ok(library({ unsorted: 3 }))] });
+      render(<DiffPage />);
+      const list = await screen.findByRole("list", {
+        name: "3 new tracks to sort.",
+      });
+      const note = screen.getByText("Checking Spotify for removed tracks…");
+      const edit = screen.getByRole("link", { name: "Edit categories" });
+      const change = screen.getByRole("link", { name: "Change sources" });
+      // Reading order: the ways on, then the list, then the footnote.
+      expect(follows(edit, change)).toBe(true);
+      expect(follows(change, list)).toBe(true);
+      expect(follows(list, note)).toBe(true);
+      expect(controls().length).toBeGreaterThan(5);
+      for (const c of controls()) expect(follows(c, note)).toBe(true);
+    });
+
+    it("with nothing waiting: after the ways on", async () => {
+      stubFetch({ cache: [ok(library())] });
+      render(<DiffPage />);
+      await screen.findByRole("heading", { name: "Nothing new to sort." });
+      const note = screen.getByText("Checking Spotify for removed tracks…");
+      expect(controls().length).toBe(3);
+      for (const c of controls()) expect(follows(c, note)).toBe(true);
+    });
+  });
+
+  // The strip fades in when it mounts. A new one per load state blinked out
+  // and back in the moment the library landed.
+  it("keeps one top strip from loading through ready", async () => {
+    stubFetch({ cache: [ok(library({ unsorted: 3 }))] });
+    const { container } = render(<DiffPage />);
+    const strip = container.querySelector("[data-action-bar]");
+    expect(strip).not.toBeNull();
+    await screen.findByRole("button", { name: "Sort 3 tracks" });
+    expect(container.querySelector("[data-action-bar]")).toBe(strip);
   });
 
   it("does not ask Spotify anything before the library is read", async () => {
@@ -278,16 +501,31 @@ describe("/diff", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Couldn't read your library.",
+        name: "Couldn’t read your library.",
       }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/HTTP|500/)).toBeNull();
     expect(diffCalls()).toEqual([]);
 
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(
-      await screen.findByRole("heading", { name: "Nothing new to sort." }),
-    ).toBeInTheDocument();
+    const heading = await screen.findByRole("heading", {
+      name: "Nothing new to sort.",
+    });
+    expect(calls.filter((u) => u === "/api/cache")).toHaveLength(2);
+    // Try again goes away with the failure; focus lands on the new sentence
+    // instead of dropping to <body>.
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  // The strip keeps its primary while it reads again, disabled, instead of
+  // blinking out and back in.
+  it("holds Try again, disabled, while it reads the library again", async () => {
+    stubFetch({ cache: [{ status: 500, body: { error: "boom" } }, "hang"] });
+    render(<DiffPage />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Try again" }),
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeDisabled();
     expect(calls.filter((u) => u === "/api/cache")).toHaveLength(2);
   });
 
@@ -301,7 +539,7 @@ describe("/diff", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Couldn't read your library.",
+        name: "Couldn’t read your library.",
       }),
     ).toBeInTheDocument();
     expect(

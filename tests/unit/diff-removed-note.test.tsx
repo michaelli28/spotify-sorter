@@ -125,18 +125,16 @@ describe("RemovedNote", () => {
     );
   });
 
-  // Titles carry their own commas; set in cream, each one reads as a song
-  // and the separators read as the list.
+  // Titles carry their own commas; set in the title weight, each one reads as
+  // a song and the separators read as the list. The note stays in ink-2.
   it("sets each removed title apart from the commas between them", async () => {
     stubDiff(diff(2, ["my ex's best friend (with blackbear)", "Ivy"]));
     render(<RemovedNote prefix="✨" applied={false} />);
     const title = await screen.findByText(
       "my ex's best friend (with blackbear)",
     );
-    expect(title).toHaveClass("text-[var(--color-text-primary)]");
-    expect(screen.getByText("Ivy")).toHaveClass(
-      "text-[var(--color-text-primary)]",
-    );
+    expect(title).toHaveClass("font-semibold");
+    expect(screen.getByText("Ivy")).toHaveClass("font-semibold");
     expect(title.closest("p")).toHaveTextContent(
       /^my ex's best friend \(with blackbear\), Ivy\.$/,
     );

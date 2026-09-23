@@ -1,52 +1,77 @@
 "use client";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { useRouter } from "next/navigation";
+import clsx from "clsx";
 import { motion } from "framer-motion";
-import { PageShell } from "@/src/components/design/PageShell";
+import { ActionBar } from "@/src/components/design/ActionBar";
 import { Button, ButtonLink } from "@/src/components/design/Button";
+import { DURATION, EASE_OUT } from "@/src/components/design/motion";
 import { ClassifyGate } from "@/src/components/shared/ClassifyGate";
 import { RemovedNote } from "@/src/components/diff/RemovedNote";
 import { WaitingTracks } from "@/src/components/diff/WaitingTracks";
 import {
-  summariseLibrary,
+  readLibrary,
+  type Library,
   type LibraryCache,
-  type LibrarySummary,
 } from "@/src/components/diff/summary";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
-const WAITING = "Waiting to be sorted.";
-
 type Load =
-  | { state: "loading" }
+  | { state: "loading"; retrying?: true }
   | { state: "failed" }
   | { state: "mismatch" }
-  | { state: "ready"; library: LibrarySummary };
+  | { state: "ready"; library: Library };
 
-// The re-run checkpoint /scan lands on. Everything here is decided by the
-// cache alone; Spotify's answer arrives later as a footnote.
+/** A cache written by another version: no retry will read it. */
+class Mismatch extends Error {}
+
+async function readCache(signal: AbortSignal): Promise<LibraryCache> {
+  const r = await fetch("/api/cache", { signal });
+  if (r.status === 409) throw new Mismatch();
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()) as LibraryCache;
+}
+
+// The re-run checkpoint /scan lands on. The sentence and every way on come
+// from the local library alone; the list of arrivals and Spotify's answer
+// each arrive on their own.
 export default function DiffPage() {
   const router = useRouter();
   const [attempt, setAttempt] = useState(0);
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  const heading = useRef<HTMLHeadingElement>(null);
+  const refocus = useRef(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
-    fetch("/api/cache", { signal: ctrl.signal })
-      .then(async (r): Promise<Load> => {
-        // Written by another version: no retry will read it.
-        if (r.status === 409) return { state: "mismatch" };
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const library = summariseLibrary((await r.json()) as LibraryCache);
-        return { state: "ready", library };
-      })
+    readCache(ctrl.signal)
+      .then(
+        (cache): Load => ({ state: "ready", library: readLibrary(cache) }),
+      )
+      .catch(
+        (err: unknown): Load =>
+          err instanceof Mismatch ? { state: "mismatch" } : { state: "failed" },
+      )
       .then((next) => {
         if (!ctrl.signal.aborted) setLoad(next);
-      })
-      .catch(() => {
-        if (!ctrl.signal.aborted) setLoad({ state: "failed" });
       });
     return () => ctrl.abort();
   }, [attempt]);
+
+  // Try again goes away with the failure: focus lands on the new sentence
+  // instead of dropping to <body>.
+  useEffect(() => {
+    if (load.state === "loading" || !refocus.current) return;
+    refocus.current = false;
+    heading.current?.focus();
+  }, [load]);
 
   // No categories yet: /review proposes them.
   const uncategorised = load.state === "ready" && load.library.categories === 0;
@@ -56,92 +81,190 @@ export default function DiffPage() {
 
   if (uncategorised) return null;
 
-  if (load.state === "loading") {
-    return (
-      <PageShell>
-        <Reading />
-      </PageShell>
-    );
-  }
-
-  if (load.state === "failed") {
-    return (
-      <PageShell title="Couldn't read your library.">
-        <Button
-          className="-ml-1"
-          onClick={() => {
-            setLoad({ state: "loading" });
-            setAttempt((n) => n + 1);
-          }}
-        >
-          Try again
-        </Button>
-      </PageShell>
-    );
-  }
-
-  if (load.state === "mismatch") {
-    // The nav locks every step on a mismatch, so name the way out.
-    return (
-      <PageShell title="Couldn't read your library.">
-        <p className="max-w-xl text-[var(--color-danger)]">
-          Your library file is from another version of SpotifySorter.
-        </p>
-        <ButtonLink href="/" className="-ml-1 mt-8">
-          Home
-        </ButtonLink>
-      </PageShell>
-    );
-  }
-
-  return <Checkpoint library={load.library} />;
+  // One strip for every state, at one place in the tree: it keeps its room
+  // and never replays its entrance when the library lands.
+  return (
+    <main className="page-frame pt-8 pb-section">
+      <ActionBar
+        status={load.state === "loading" ? <Reading /> : undefined}
+        end={
+          <Primary
+            load={load}
+            onRetry={() => {
+              refocus.current = true;
+              setLoad({ state: "loading", retrying: true });
+              setAttempt((n) => n + 1);
+            }}
+          />
+        }
+      />
+      {load.state === "failed" && (
+        <Title ref={heading}>Couldn’t read your library.</Title>
+      )}
+      {load.state === "mismatch" && (
+        // The nav locks every step on a mismatch, so name the way out.
+        <>
+          <Title ref={heading}>Couldn’t read your library.</Title>
+          <p className="mt-4 max-w-xl text-danger">
+            Your library file is from another version of SpotifySorter.
+          </p>
+        </>
+      )}
+      {load.state === "ready" && (
+        <Checkpoint library={load.library} headingRef={heading} />
+      )}
+    </main>
+  );
 }
 
-function Checkpoint({ library }: { library: LibrarySummary }) {
-  const { item, spring, itemDelay } = useMotionConfig();
-  const waiting = library.unsorted > 0;
+/**
+ * The page's one primary, in the strip. Nothing on the first read: a disabled
+ * placeholder would have to guess its label. A retry keeps Try again,
+ * disabled, so the strip doesn't blink.
+ */
+function Primary({ load, onRetry }: { load: Load; onRetry: () => void }) {
+  if (load.state === "loading" && !load.retrying) return null;
+  const waiting = load.state === "ready" && load.library.unsorted > 0;
+  const retry = load.state === "failed" || load.state === "loading";
   return (
-    <PageShell title={waiting ? WAITING : "Nothing new to sort."}>
-      <div className="max-w-xl">
-        {waiting && (
-          <motion.div
-            variants={item}
-            initial="hidden"
-            animate="visible"
-            transition={{ ...spring, delay: itemDelay(0) }}
-            className="mb-10"
-          >
-            <WaitingTracks
-              label={WAITING}
-              tracks={library.newest}
-              total={library.unsorted}
-            />
-          </motion.div>
-        )}
-        {/* Outside the list's transform, which would pin ClassifyGate's fixed
-            dialog to this box. -ml-1 cancels the buttons' px-1, so each
-            row's first label sits on the title's left edge. */}
-        <div className="-ml-1 flex flex-wrap items-baseline gap-x-8 gap-y-2">
-          <div className="basis-full sm:basis-auto">
-            {/* /classify spends on load unless every track has a category. */}
-            {waiting ? (
-              <ClassifyGate unsorted={library.unsorted} />
-            ) : (
-              <ButtonLink href="/classify">Tune the fit</ButtonLink>
-            )}
-          </div>
-          <ButtonLink href="/review" variant="ghost">
-            Edit categories
-          </ButtonLink>
-          <ButtonLink href="/scope" variant="ghost" size="sm">
-            Change sources
-          </ButtonLink>
-        </div>
-        <div className="mt-section">
-          <RemovedNote prefix={library.prefix} applied={library.applied} />
-        </div>
-      </div>
-    </PageShell>
+    // Keyed by what it does, so a new primary fades in, opacity only: a
+    // transform here would trap ClassifyGate's fixed price tag.
+    <FadeIn key={waiting ? "sort" : retry ? "retry" : load.state} delay={0}>
+      {retry ? (
+        <Button onClick={onRetry} disabled={load.state === "loading"}>
+          Try again
+        </Button>
+      ) : load.state === "mismatch" ? (
+        <ButtonLink href="/">Home</ButtonLink>
+      ) : waiting ? (
+        // /classify spends on load unless every track has a category.
+        <ClassifyGate unsorted={load.library.unsorted} />
+      ) : (
+        <ButtonLink href="/classify">Tune the fit</ButtonLink>
+      )}
+    </FadeIn>
+  );
+}
+
+function Checkpoint({
+  library,
+  headingRef,
+}: {
+  library: Library;
+  headingRef: Ref<HTMLHeadingElement>;
+}) {
+  const headingId = useId();
+  const waiting = library.unsorted > 0;
+  const count = library.unsorted.toLocaleString("en-US");
+  return (
+    // Desktop with tracks waiting: the sentence, the ways on and the footnote
+    // at the left, the slip beside them, like home's headline beside its
+    // crate. The slip's column is held from the start, so its arrival moves
+    // nothing at the left.
+    <div
+      className={clsx(
+        "grid gap-y-8",
+        waiting &&
+          "desk:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] desk:grid-rows-[auto_auto_1fr] desk:gap-x-16",
+      )}
+    >
+      <Title ref={headingRef} id={headingId} className="desk:row-start-1">
+        {waiting
+          ? `${count} new ${library.unsorted === 1 ? "track" : "tracks"} to sort.`
+          : "Nothing new to sort."}
+      </Title>
+      <FadeIn
+        delay={0.08}
+        className="flex flex-wrap content-start gap-x-8 desk:col-start-1 desk:row-start-2"
+      >
+        <ButtonLink href="/review" variant="ghost">
+          Edit categories
+        </ButtonLink>
+        <ButtonLink href="/scope" variant="ghost">
+          Change sources
+        </ButtonLink>
+      </FadeIn>
+      {waiting && (
+        <WaitingTracks
+          labelledBy={headingId}
+          total={library.unsorted}
+          className="tab:max-w-[32rem] desk:col-start-2 desk:row-span-3 desk:row-start-1 desk:self-start"
+        />
+      )}
+      {/* Last in the page, below every control: Spotify answers in ~40s and
+          the note grows or empties then, so nothing may sit under it. */}
+      <FadeIn delay={0.16} className="desk:col-start-1 desk:row-start-3">
+        <RemovedNote
+          prefix={library.prefix}
+          applied={library.applied}
+          className="max-w-[60ch]"
+        />
+      </FadeIn>
+    </div>
+  );
+}
+
+// The page's entrance (brief §4.4): the sentence rises into place once the
+// library is read. PageTransition's fade has already run by then.
+// tabIndex -1: focus lands here after Try again. Not a control, so no ring.
+function Title({
+  ref,
+  id,
+  className,
+  children,
+}: {
+  ref?: Ref<HTMLHeadingElement>;
+  id?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { reduced } = useMotionConfig();
+  return (
+    <motion.h1
+      ref={ref}
+      id={id}
+      tabIndex={-1}
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reduced
+          ? { duration: DURATION.reduced }
+          : { duration: DURATION.scene, ease: EASE_OUT }
+      }
+      className={clsx(
+        "font-display text-display-2 text-balance text-ink outline-none",
+        className,
+      )}
+    >
+      {children}
+    </motion.h1>
+  );
+}
+
+// Opacity only: what follows the sentence, and the strip's primary.
+function FadeIn({
+  delay,
+  className,
+  children,
+}: {
+  delay: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { reduced } = useMotionConfig();
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={
+        reduced
+          ? { duration: DURATION.reduced }
+          : { duration: DURATION.sceneMin, delay }
+      }
+      className={className}
+    >
+      {children}
+    </motion.div>
   );
 }
 
@@ -150,13 +273,12 @@ function Checkpoint({ library }: { library: LibrarySummary }) {
 function Reading() {
   const { fade } = useMotionConfig();
   return (
-    <motion.p
+    <motion.span
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ ...fade, delay: 0.4 }}
-      className="text-[var(--color-text-secondary)]"
     >
       Reading your library…
-    </motion.p>
+    </motion.span>
   );
 }

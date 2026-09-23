@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
@@ -17,13 +18,14 @@ export interface RemovedNoteProps {
   prefix: string;
   /** Whether Apply has made any playlist yet: before that, none keep anything. */
   applied: boolean;
+  className?: string;
 }
 
 /**
  * A footnote: the re-read of every source playlist takes ~40s, and nothing on
  * the page waits for it.
  */
-export function RemovedNote({ prefix, applied }: RemovedNoteProps) {
+export function RemovedNote({ prefix, applied, className }: RemovedNoteProps) {
   const { fade, reduced } = useMotionConfig();
   const live = useRef<HTMLDivElement>(null);
   const [attempt, setAttempt] = useState(0);
@@ -68,20 +70,17 @@ export function RemovedNote({ prefix, applied }: RemovedNoteProps) {
 
   return (
     // tabIndex -1: Try again unmounts itself, so focus waits here instead
-    // of dropping to <body>. Not a control, so no ring.
+    // of dropping to <body>. Not a control, so no ring. Empty once nothing
+    // was removed, and then it takes no room.
     <div
       ref={live}
       tabIndex={-1}
       aria-live="polite"
-      className="text-sm leading-6 outline-none"
+      className={clsx("text-ink-2 outline-none empty:hidden", className)}
     >
       <AnimatePresence mode="wait" initial={false}>
         {check.state === "checking" && (
-          <motion.p
-            key="checking"
-            {...swap}
-            className="text-[var(--color-text-secondary)]"
-          >
+          <motion.p key="checking" {...swap}>
             Checking Spotify for removed tracks…
           </motion.p>
         )}
@@ -91,13 +90,10 @@ export function RemovedNote({ prefix, applied }: RemovedNoteProps) {
             {...swap}
             className="flex flex-wrap items-baseline gap-x-4"
           >
-            <p className="text-[var(--color-text-secondary)]">
-              Couldn’t check Spotify for removed tracks.
-            </p>
+            <p>Couldn’t check Spotify for removed tracks.</p>
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-1"
               onClick={() => {
                 live.current?.focus();
                 setCheck({ state: "checking" });
@@ -139,17 +135,17 @@ function Removed({
     <>
       {/* apply.ts only adds. It can't say a removed track was ever placed
           (unsorted, or under the threshold), only that Apply won't drop it. */}
-      <p className="text-[var(--color-text-secondary)]">
+      <p>
         {applied
           ? `${gone} Apply never takes tracks out of your ${prefix} playlists.`
           : gone}
       </p>
       {examples.length > 0 && (
-        <p className="text-[var(--color-text-secondary)]">
+        <p>
           {examples.map((title, i) => (
             <Fragment key={i}>
               {i > 0 && ", "}
-              <span className="text-[var(--color-text-primary)]">{title}</span>
+              <span className="font-semibold">{title}</span>
             </Fragment>
           ))}
           {more > 0 && ` and ${more.toLocaleString()} more`}.
