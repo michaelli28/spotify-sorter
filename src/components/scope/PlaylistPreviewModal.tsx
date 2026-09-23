@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 
@@ -24,6 +24,8 @@ export function PlaylistPreviewModal({
 }) {
   const [tracks, setTracks] = useState<PreviewTrack[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -51,6 +53,27 @@ export function PlaylistPreviewModal({
     };
   }, [open, playlistId, liked]);
 
+  // Escape closes. onClose is an inline arrow at the call site, so this
+  // re-subscribes each render — harmless, and dropping it from the deps would
+  // capture a stale handler.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // Move focus into the panel, and put it back where it came from on close —
+  // otherwise Tab walks the page behind the backdrop with nothing visible.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+    return () => previous?.focus();
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -68,13 +91,21 @@ export function PlaylistPreviewModal({
             exit={{ opacity: 0, y: 12 }}
             transition={{ type: "spring", stiffness: 200, damping: 30 }}
             onClick={(e) => e.stopPropagation()}
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
           >
             <div className="flex items-center justify-between p-6 border-b border-[var(--color-border-default)]">
               <div>
                 <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-1">
                   Preview
                 </div>
-                <div className="text-xl text-[var(--color-text-primary)]">
+                <div
+                  id={titleId}
+                  className="text-xl text-[var(--color-text-primary)]"
+                >
                   {title}
                 </div>
                 {tracks && (
