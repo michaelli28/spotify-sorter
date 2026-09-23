@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { dataDir } from "@/src/lib/config/paths";
 import { readCache, type Cache } from "@/src/lib/cache";
-import { rejectCrossSite } from "@/src/lib/http/same-origin";
+import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
 import {
   DefinitionsError,
   definitionsSha256,
@@ -126,7 +126,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const blocked = rejectCrossSite(req);
+  const blocked = rejectUnlessFromApp(req);
   if (blocked) return blocked;
   const parsed = LabelInputSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success)

@@ -59,6 +59,13 @@ function req(path: string, site: string | null, method = "GET"): Request {
 }
 
 // Routes that spend Anthropic money or write to Spotify.
+//
+// `none` means a direct navigation: a typed URL, a bookmark, a link opened in
+// a new tab. It used to be allowed so these could be triggered by hand, but
+// classify and propose are GETs — the browser will happily fire them from the
+// address bar, and propose deletes every category and assignment on the way.
+// A paid or destructive action now has to come from the app's own pages.
+// Non-browser clients send no header at all and are still allowed.
 const ROUTES = [
   {
     name: "classify",
@@ -91,8 +98,8 @@ const ROUTES = [
 ];
 
 describe.each(ROUTES)("$name route", ({ call, path, method, run }) => {
-  it.each(["cross-site", "same-site"])(
-    "rejects a %s browser request (another website or port) before doing anything",
+  it.each(["cross-site", "same-site", "none"])(
+    "rejects a %s browser request before doing anything",
     async (site) => {
       const res = await call(req(path, site, method));
       expect(res.status).toBe(403);
@@ -100,8 +107,8 @@ describe.each(ROUTES)("$name route", ({ call, path, method, run }) => {
     },
   );
 
-  it.each(["same-origin", "none", null])(
-    "allows the app's own pages, typed URLs and non-browser clients (%s)",
+  it.each(["same-origin", null])(
+    "allows the app's own pages and non-browser clients (%s)",
     async (site) => {
       const res = await call(req(path, site, method));
       expect(res.status).toBe(200);

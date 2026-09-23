@@ -2,7 +2,7 @@ import {
   runProposeFromCache,
   type ProposeFromCacheProgress,
 } from "@/src/lib/pipeline/propose";
-import { rejectCrossSite } from "@/src/lib/http/same-origin";
+import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
 import { env } from "@/src/lib/config/env";
 import { singleFlight } from "@/src/lib/pipeline/single-flight";
 import { jobEventStream } from "@/src/lib/pipeline/event-stream";
@@ -24,5 +24,5 @@ const proposeJob = singleFlight((emit: (p: ProposeFromCacheProgress) => void) =>
 );
 
 export async function GET(req: Request) {
-  return rejectCrossSite(req) ?? jobEventStream(proposeJob());
+  return rejectUnlessFromApp(req) ?? jobEventStream(proposeJob());
 }

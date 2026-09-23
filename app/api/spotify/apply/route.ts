@@ -1,5 +1,5 @@
 import { withSpotify, type Session } from "@/src/lib/spotify/client";
-import { rejectCrossSite } from "@/src/lib/http/same-origin";
+import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
 import { runApplyFromCache } from "@/src/lib/pipeline/apply";
 import { singleFlight } from "@/src/lib/pipeline/single-flight";
 import { jobEventStream } from "@/src/lib/pipeline/event-stream";
@@ -35,5 +35,5 @@ const applyJob = singleFlight(
 );
 
 export async function POST(req: Request) {
-  return rejectCrossSite(req) ?? jobEventStream(applyJob(parseSession(req)));
+  return rejectUnlessFromApp(req) ?? jobEventStream(applyJob(parseSession(req)));
 }

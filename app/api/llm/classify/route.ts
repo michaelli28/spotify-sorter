@@ -1,5 +1,5 @@
 import { env } from "@/src/lib/config/env";
-import { rejectCrossSite } from "@/src/lib/http/same-origin";
+import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
 import { runClassifyFromCache } from "@/src/lib/pipeline/classify";
 import { singleFlight } from "@/src/lib/pipeline/single-flight";
 import { jobEventStream } from "@/src/lib/pipeline/event-stream";
@@ -15,5 +15,5 @@ const classifyJob = singleFlight(
 );
 
 export async function GET(req: Request) {
-  return rejectCrossSite(req) ?? jobEventStream(classifyJob());
+  return rejectUnlessFromApp(req) ?? jobEventStream(classifyJob());
 }
