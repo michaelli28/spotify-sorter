@@ -3,16 +3,19 @@ export interface CategoryRef {
   name: string;
 }
 
-export interface CategoryDeltaResult {
-  added: CategoryRef[];
-  removed: CategoryRef[];
-  unchanged: CategoryRef[];
+export interface CategoryDeltaResult<
+  B extends CategoryRef = CategoryRef,
+  A extends CategoryRef = CategoryRef,
+> {
+  added: A[];
+  removed: B[];
+  unchanged: A[];
 }
 
-export function categoryDelta(
-  before: CategoryRef[],
-  after: CategoryRef[],
-): CategoryDeltaResult {
+export function categoryDelta<B extends CategoryRef, A extends CategoryRef>(
+  before: readonly B[],
+  after: readonly A[],
+): CategoryDeltaResult<B, A> {
   const beforeIds = new Set(before.map((c) => c.id));
   const afterIds = new Set(after.map((c) => c.id));
   return {

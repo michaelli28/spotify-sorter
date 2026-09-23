@@ -1,338 +1,415 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { PageShell } from "@/src/components/design/PageShell";
+import clsx from "clsx";
+import { ActionBar } from "@/src/components/design/ActionBar";
 import { Button } from "@/src/components/design/Button";
-import { MergeableGrid } from "@/src/components/review/MergeableGrid";
-import { AddCategoryForm } from "@/src/components/review/AddCategoryForm";
+import { useNavLock } from "@/src/components/design/NavLock";
+import { PageShell } from "@/src/components/design/PageShell";
+import { CategoryIndex } from "@/src/components/review/CategoryIndex";
 import { CostPreviewModal } from "@/src/components/review/CostPreviewModal";
-import { buildCategoriesPatch } from "@/src/lib/categories/patch-body";
-import { categoryDelta } from "@/src/lib/categories/delta";
 import { TrackSearchModal } from "@/src/components/review/TrackSearchModal";
+import { useCategorySource } from "@/src/components/review/useCategorySource";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
-import { estimateCostUSD, estimateClassifyCost } from "@/src/lib/llm/cost";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
+import {
+  categoryEdits,
+  describeEdits,
+  duplicateNameKeys,
+  nameKey,
+} from "@/src/lib/categories/edits";
 import type { DraftCategory } from "@/src/lib/categories/merge";
-import type { TrackLookupEntry } from "@/src/components/review/CategoryCard";
+import { buildCategoriesPatch } from "@/src/lib/categories/patch-body";
+import { estimateRescoreCost } from "@/src/lib/categories/rescore-cost";
+import { estimateClassifyCost, estimateCostUSD } from "@/src/lib/llm/cost";
 
-interface CacheRun {
-  run_id: string;
-  type?: "propose" | "classify";
-  started_at: string;
-  completed_at: string | null;
-  tracks_total: number;
-  tracks_classified: number;
-  cost_usd: number;
-  summary: string;
+const HOME = { href: "/", label: "Home" } as const;
+
+type Work =
+  | { kind: "saving" }
+  | { kind: "rescoring"; against: string }
+  | { kind: "wiping" };
+
+const tally = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names: string[]): string {
+  return names.length < 2
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function reason(err: unknown): string {
+  if (err instanceof TypeError) return "The app's server didn't answer.";
+  return err instanceof Error ? err.message : "Unknown error.";
+}
+
+async function send(url: string, method: string, body: unknown) {
+  const res = await fetch(url, {
+    method,
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+  if (!res.ok) throw new Error(`The server answered ${res.status}.`);
 }
 
 export default function ReviewPage() {
   const router = useRouter();
-  const [draft, setDraft] = useState<DraftCategory[] | null>(null);
-  // What the cache held when the page loaded, so the confirm can name the
-  // categories a save would delete.
-  const [saved, setSaved] = useState<{ id: string; name: string }[]>([]);
-  const [tracks, setTracks] = useState<Record<string, TrackLookupEntry>>({});
-  const [trackCount, setTrackCount] = useState(0);
-  const [assignmentCount, setAssignmentCount] = useState(0);
-  const [runs, setRuns] = useState<CacheRun[]>([]);
-  const [confirming, setConfirming] = useState(false);
-  const [reproposing, setReproposing] = useState(false);
-  const [addingToCategory, setAddingToCategory] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [proposeProgress, setProposeProgress] = useState<{
-    output_tokens: number;
-  } | null>(null);
-  const [proposeError, setProposeError] = useState<string | null>(null);
-  const [proposeAttempt, setProposeAttempt] = useState(0);
+  const { phase, library, saved, setSaved, draft, setDraft, reload } =
+    useCategorySource();
+  const [asking, setAsking] = useState<"classify" | "repropose" | null>(null);
+  const [work, setWork] = useState<Work | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [dragHint, setDragHint] = useState<string | null>(null);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  // Held while Claude or a save runs. Leaving mid-propose is safe (the server
+  // finishes and saves), but it shouldn't be one stray click away.
+  useNavLock(phase.kind === "proposing" || work !== null);
+  const { fade } = useMotionConfig();
 
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let cancelled = false;
-    (async () => {
-      const cache = await fetch("/api/cache").then((r) => r.json());
-      if (cancelled) return;
-      const lookup: Record<string, TrackLookupEntry> = {};
-      for (const [id, t] of Object.entries(
-        cache.tracks as Record<string, { title: string; artist_id: string }>,
-      )) {
-        const artist = (cache.artists as Record<string, { name: string }>)[
-          t.artist_id
-        ];
-        lookup[id] = { id, title: t.title, artist_name: artist?.name ?? "" };
-      }
-      setTracks(lookup);
-      setTrackCount(Object.keys(lookup).length);
-      setAssignmentCount(
-        Object.keys((cache.assignments as Record<string, unknown>) ?? {})
-          .length,
-      );
-      setRuns(((cache.runs as CacheRun[] | undefined) ?? []).slice(-10));
-
-      const existingCategories = Object.entries(
-        cache.categories as Record<
-          string,
-          {
-            name: string;
-            description: string;
-            example_track_ids?: string[];
-          }
-        >,
-      );
-      if (existingCategories.length > 0) {
-        setSaved(existingCategories.map(([id, c]) => ({ id, name: c.name })));
-        setDraft(
-          existingCategories.map(([id, c]) => ({
-            id,
-            name: c.name,
-            description: c.description,
-            example_track_ids: c.example_track_ids ?? [],
-          })),
-        );
-        return;
-      }
-      setProposeError(null);
-      setProposeProgress(null);
-      es = new EventSource("/api/llm/propose");
-      es.addEventListener("progress", (e) =>
-        setProposeProgress(JSON.parse((e as MessageEvent).data)),
-      );
-      es.addEventListener("done", (e) => {
-        const data = JSON.parse((e as MessageEvent).data);
-        setDraft(data.categories);
-        es?.close();
-      });
-      es.addEventListener("error", (e) => {
-        const raw = (e as MessageEvent).data;
-        const message = raw
-          ? (JSON.parse(raw).message ?? "Unknown error")
-          : "Connection lost";
-        setProposeError(message);
-        es?.close();
-      });
-    })();
-    return () => {
-      cancelled = true;
-      es?.close();
-    };
-  }, [proposeAttempt]);
-
-  async function classify() {
-    setRunning(true);
-    const cacheBefore = await fetch("/api/cache").then((r) => r.json());
-    const previousCategoryIds = new Set(
-      Object.keys((cacheBefore.categories as Record<string, unknown>) ?? {}),
-    );
-    await fetch("/api/cache", {
-      method: "PATCH",
-      body: JSON.stringify(
-        buildCategoriesPatch(draft!, new Date().toISOString()),
-      ),
-      headers: { "content-type": "application/json" },
-    });
-    const draftCategoryIds = new Set(draft!.map((c) => c.id));
-    const newCategoryIds = Array.from(draftCategoryIds).filter(
-      (id) => !previousCategoryIds.has(id),
-    );
-    if (newCategoryIds.length > 0 && previousCategoryIds.size > 0) {
-      await fetch("/api/llm/reclassify", {
-        method: "POST",
-        body: JSON.stringify({ newCategoryIds }),
-        headers: { "content-type": "application/json" },
-      });
-    }
-    router.push("/classify");
-  }
-
-  async function startRepropose() {
-    await fetch("/api/cache", {
-      method: "PATCH",
-      body: JSON.stringify({ _clear: ["categories", "assignments"] }),
-      headers: { "content-type": "application/json" },
-    });
-    setDraft(null);
-    setProposeError(null);
-    setProposeProgress(null);
-    setProposeAttempt((n) => n + 1);
-  }
-
-  if (!draft) {
-    if (proposeError) {
-      return (
-        <PageShell eyebrow="Couldn't propose" title="That call failed.">
-          <div className="max-w-xl space-y-6">
-            <p className="text-[var(--color-text-secondary)]">{proposeError}</p>
-            <Button
-              onClick={() => {
-                setProposeError(null);
-                setProposeProgress(null);
-                setProposeAttempt((n) => n + 1);
-              }}
-            >
-              Try again
-            </Button>
-          </div>
-        </PageShell>
-      );
-    }
+  if (phase.kind === "loading") return <PageShell>{null}</PageShell>;
+  if (phase.kind === "loadError")
     return (
-      <PageShell eyebrow="Thinking" title="Proposing categories…">
+      <Stalled
+        title="Your categories didn't load."
+        message={phase.message}
+        onRetry={phase.retryable ? reload : undefined}
+      />
+    );
+  if (phase.kind === "proposeError")
+    return (
+      <Stalled
+        title="Claude couldn't propose categories."
+        message={phase.message}
+        onRetry={reload}
+      />
+    );
+  if (phase.kind === "proposing")
+    return (
+      <PageShell title="Proposing categories…" back={HOME}>
         <ThinkingIndicator
-          message="Claude Haiku is listening through your library."
-          estimateSeconds={Math.max(30, Math.round(trackCount / 30))}
-          outputTokens={proposeProgress?.output_tokens}
+          message={`Claude is reading all ${tally(library.trackCount, "track")}. Leaving this page won't stop it.`}
+          estimateSeconds={Math.max(30, Math.round(library.trackCount / 30))}
+          outputTokens={phase.outputTokens}
         />
       </PageShell>
     );
-  }
 
-  const tracksLeftToClassify = Math.max(0, trackCount - assignmentCount);
-  const classifyEst = estimateClassifyCost(tracksLeftToClassify);
-  const fullCostEst = estimateClassifyCost(trackCount).high;
-  const lastPropose = [...runs]
-    .reverse()
-    .find((r) => r.type === "propose" || (!r.type && r.cost_usd > 0));
-  const reproposeEst =
+  const edits = categoryEdits(saved, draft);
+  const placed = library.trackCount - library.unsorted;
+  // Saving a new category re-scores every placed track against it
+  // (/api/llm/reclassify), a paid call made before /classify opens.
+  const rescoring =
+    edits.added.length > 0 && saved.length > 0 && library.rescorable > 0;
+  const addedNames = joinNames(edits.added.map((c) => c.name.trim()));
+  const sortCost = estimateClassifyCost(library.unsorted);
+  const rescoreCost = rescoring
+    ? estimateRescoreCost(library.rescorable, edits.added.length)
+    : { low: 0, high: 0 };
+  const fullSortCost = estimateClassifyCost(library.trackCount).high;
+  const proposeCost =
     estimateCostUSD({
-      tracks: trackCount,
+      tracks: library.trackCount,
       categories: 0,
       phase: "propose",
     }) * 1.2;
-  const estimates: Record<string, number> = Object.fromEntries(
-    draft.map((c) => [c.id, c.example_track_ids.length]),
-  );
+
+  const dupes = duplicateNameKeys(draft);
+  const clash = draft.find((c) => dupes.has(nameKey(c.name)));
+  const clashCount = clash
+    ? draft.filter((c) => nameKey(c.name) === nameKey(clash.name)).length
+    : 0;
+  const unnamed = draft.some((c) => !c.name.trim());
+  const blocked = work !== null || draft.length === 0 || !!clash || unnamed;
+
+  async function classify() {
+    const snapshot = draft;
+    setAsking(null);
+    setProblem(null);
+    setWork({ kind: "saving" });
+    let newIds: string[];
+    let hadCategories: boolean;
+    try {
+      const before = await fetch("/api/cache");
+      if (!before.ok) throw new Error(`The server answered ${before.status}.`);
+      const { categories } = (await before.json()) as {
+        categories: Record<string, unknown>;
+      };
+      const previous = new Set(Object.keys(categories));
+      hadCategories = previous.size > 0;
+      newIds = snapshot.map((c) => c.id).filter((id) => !previous.has(id));
+      await send(
+        "/api/cache",
+        "PATCH",
+        buildCategoriesPatch(snapshot, new Date().toISOString()),
+      );
+    } catch (err) {
+      setWork(null);
+      setProblem(`Couldn't save your categories. ${reason(err)}`);
+      return;
+    }
+    // With nothing placed the route returns before calling Claude; skip it.
+    if (newIds.length > 0 && hadCategories && library.rescorable > 0) {
+      const against = joinNames(
+        snapshot.filter((c) => newIds.includes(c.id)).map((c) => c.name),
+      );
+      setWork({ kind: "rescoring", against });
+      try {
+        await send("/api/llm/reclassify", "POST", { newCategoryIds: newIds });
+      } catch (err) {
+        setSaved(snapshot);
+        setWork(null);
+        // "failed" leads: the bar truncates this line at phone widths.
+        setProblem(
+          `Re-scoring against ${against} failed; your categories are saved. ${reason(err)}`,
+        );
+        return;
+      }
+    }
+    setSaved(snapshot);
+    router.push("/classify");
+  }
+
+  async function wipe() {
+    setAsking(null);
+    setProblem(null);
+    setWork({ kind: "wiping" });
+    try {
+      await send("/api/cache", "PATCH", {
+        _clear: ["categories", "assignments"],
+      });
+    } catch (err) {
+      setWork(null);
+      setProblem(`Couldn't wipe your categories. ${reason(err)}`);
+      return;
+    }
+    setWork(null);
+    reload();
+  }
+
+  const pending = describeEdits(edits);
+  const status: string | null = dragHint
+    ? dragHint
+    : work?.kind === "rescoring"
+      ? `Claude is re-scoring your ${tally(library.rescorable, "placed track")} against ${work.against}.`
+      : (problem ??
+        (draft.length === 0
+          ? "Add a category to classify."
+          : clash
+            ? `${clashCount} categories are called “${clash.name.trim()}”.`
+            : unnamed
+              ? "Every category needs a name."
+              : pending && `Unsaved: ${pending}`));
+
+  const adding = draft.find((c) => c.id === addingTo);
 
   return (
-    <PageShell
-      eyebrow="Step two"
-      title={`${draft.length} categories. Edit anything.`}
-    >
-      <MergeableGrid
-        categories={draft}
-        trackLookup={tracks}
-        estimates={estimates}
-        onChange={setDraft}
-        onAddTrack={(catId) => setAddingToCategory(catId)}
-      />
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="mt-8"
+    <PageShell title={`${draft.length} categories. Edit anything.`}>
+      <div
+        inert={work !== null}
+        className={clsx(
+          "transition-opacity duration-200",
+          work && "opacity-60",
+        )}
       >
-        <AddCategoryForm
-          onAdd={(name, description) =>
-            setDraft([
-              ...draft,
-              {
-                id: crypto.randomUUID(),
-                name,
-                description,
-                example_track_ids: [],
-              },
-            ])
-          }
+        <CategoryIndex
+          categories={draft}
+          tracks={library.tracks}
+          onChange={setDraft}
+          onAddTrack={setAddingTo}
+          onDragHint={setDragHint}
         />
-      </motion.div>
-      <div className="pt-16 flex items-center gap-8 flex-wrap">
-        <Button
-          onClick={() => setConfirming(true)}
-          disabled={running || draft.length === 0}
-        >
-          {running ? "Classifying…" : "Classify"}
-        </Button>
         <Button
           variant="ghost"
-          onClick={() => setReproposing(true)}
-          disabled={running}
+          size="sm"
+          className="-ml-1 mt-section"
+          onClick={() => setAsking("repropose")}
         >
           Re-propose
         </Button>
-        <span className="text-sm text-[var(--color-text-tertiary)]">
-          {draft.length} categories · {trackCount} tracks
-          {assignmentCount > 0 && ` · ${assignmentCount} already classified`}
-        </span>
       </div>
-      {lastPropose && (
-        <div className="pt-3 text-xs text-[var(--color-text-tertiary)]">
-          Last propose{" "}
-          {timeAgo(lastPropose.completed_at ?? lastPropose.started_at)}
-          {" · "}${lastPropose.cost_usd.toFixed(2)}
-        </div>
-      )}
+
       <CostPreviewModal
-        open={confirming}
-        removing={categoryDelta(saved, draft).removed}
-        estimateUsd={classifyEst}
-        message={
-          tracksLeftToClassify === 0
-            ? `All ${trackCount} tracks are already classified — Claude won't be called.`
-            : `About to classify ${tracksLeftToClassify} new tracks across ${draft.length} categories using Claude Haiku.`
+        open={asking === "classify"}
+        estimateUsd={{
+          low: sortCost.low + rescoreCost.low,
+          high: sortCost.high + rescoreCost.high,
+        }}
+        message={classifyMessage({
+          unsorted: library.unsorted,
+          rescorable: rescoring ? library.rescorable : 0,
+          against: addedNames,
+        })}
+        removing={edits.removed}
+        renaming={edits.renamed}
+        adding={edits.added.length}
+        notes={[
+          edits.removed.length > 0 && placed > 0
+            ? "Tracks already placed in a deleted category don't move; any that fit nothing else end up in no playlist."
+            : null,
+          (edits.renamed.length > 0 || edits.redescribed.length > 0) &&
+          placed > 0
+            ? "Edited names and descriptions only steer tracks sorted from now on."
+            : null,
+        ].filter((n): n is string => n !== null)}
+        breakdown={
+          library.unsorted > 0 && placed > 0 && !rescoring
+            ? {
+                totalTracks: library.trackCount,
+                alreadyDone: placed,
+                fresh: library.unsorted,
+                fullCostUsd: fullSortCost,
+              }
+            : undefined
         }
-        breakdown={{
-          totalTracks: trackCount,
-          alreadyDone: assignmentCount,
-          fresh: tracksLeftToClassify,
-          fullCostUsd: fullCostEst,
-        }}
-        onConfirm={() => {
-          setConfirming(false);
-          classify();
-        }}
-        onCancel={() => setConfirming(false)}
+        onConfirm={classify}
+        onCancel={() => setAsking(null)}
+      />
+      <CostPreviewModal
+        open={asking === "repropose"}
+        estimateUsd={{ low: proposeCost * 0.8, high: proposeCost }}
+        message={reproposeMessage({
+          saved: saved.length,
+          placed,
+          tracks: library.trackCount,
+          sortAgainUsd: fullSortCost,
+        })}
+        notes={
+          saved.length > 0
+            ? [
+                "The labelling page will refuse to load until definitions.md matches the new categories.",
+              ]
+            : []
+        }
+        confirmLabel="Wipe & re-propose"
+        confirmVariant="danger"
+        onConfirm={wipe}
+        onCancel={() => setAsking(null)}
       />
       <TrackSearchModal
-        open={addingToCategory !== null}
-        categoryName={draft.find((c) => c.id === addingToCategory)?.name ?? ""}
-        trackLookup={tracks}
-        alreadyInCategory={
-          new Set(
-            draft.find((c) => c.id === addingToCategory)?.example_track_ids ??
-              [],
+        open={adding !== undefined}
+        categoryName={adding?.name ?? ""}
+        trackLookup={library.tracks}
+        alreadyInCategory={new Set(adding?.example_track_ids ?? [])}
+        onClose={() => setAddingTo(null)}
+        onAdd={(trackIds) =>
+          setDraft(
+            draft.map(
+              (c): DraftCategory =>
+                c.id === addingTo
+                  ? {
+                      ...c,
+                      example_track_ids: [
+                        ...c.example_track_ids,
+                        ...trackIds.filter(
+                          (id) => !c.example_track_ids.includes(id),
+                        ),
+                      ],
+                    }
+                  : c,
+            ),
           )
         }
-        onClose={() => setAddingToCategory(null)}
-        onAdd={(trackIds) => {
-          if (!addingToCategory) return;
-          setDraft(
-            draft.map((c) =>
-              c.id === addingToCategory
-                ? {
-                    ...c,
-                    example_track_ids: [
-                      ...c.example_track_ids,
-                      ...trackIds.filter(
-                        (id) => !c.example_track_ids.includes(id),
-                      ),
-                    ],
-                  }
-                : c,
-            ),
-          );
-        }}
       />
-      <CostPreviewModal
-        open={reproposing}
-        estimateUsd={{ low: reproposeEst * 0.8, high: reproposeEst }}
-        message={`This wipes the current ${draft.length} categories and any track assignments, then asks Claude to invent new ones from your full library (${trackCount} tracks).`}
-        confirmLabel="Wipe & re-propose"
-        onConfirm={async () => {
-          setReproposing(false);
-          await startRepropose();
-        }}
-        onCancel={() => setReproposing(false)}
+
+      <ActionBar
+        status={
+          status && (
+            // A changed line fades in, so a new count is noticed down here;
+            // drag hints share one key so crossing rows doesn't flicker.
+            <motion.span
+              key={dragHint ? "drag" : status}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={fade}
+              className={clsx(
+                status === problem && "text-[var(--color-danger)]",
+              )}
+            >
+              {status}
+            </motion.span>
+          )
+        }
+        end={
+          <Button
+            disabled={blocked}
+            onClick={() => {
+              setProblem(null);
+              setAsking("classify");
+            }}
+          >
+            {work?.kind === "saving"
+              ? "Saving…"
+              : work?.kind === "rescoring"
+                ? "Re-scoring…"
+                : "Classify"}
+          </Button>
+        }
       />
+    </PageShell>
+  );
+}
+
+function classifyMessage({
+  unsorted,
+  rescorable,
+  against,
+}: {
+  unsorted: number;
+  rescorable: number;
+  against: string;
+}): string {
+  const sort =
+    unsorted > 0
+      ? `sorts the ${tally(unsorted, "track")} without a category`
+      : null;
+  const rescore =
+    rescorable > 0
+      ? `re-scores your ${tally(rescorable, "placed track")} against ${against}`
+      : null;
+  if (sort && rescore) return `Claude ${sort}, and ${rescore}.`;
+  if (sort || rescore) return `Claude ${sort ?? rescore}.`;
+  return "Every track already has a category, so Claude isn't called.";
+}
+
+// The wipe clears what is saved, so that's what it counts, not the draft.
+function reproposeMessage({
+  saved,
+  placed,
+  tracks,
+  sortAgainUsd,
+}: {
+  saved: number;
+  placed: number;
+  tracks: number;
+  sortAgainUsd: number;
+}): string {
+  if (saved === 0)
+    return `Claude proposes new categories from all ${tally(tracks, "track")}.`;
+  const all = `Deletes all ${tally(saved, "category", "categories")}`;
+  return placed > 0
+    ? `${all} and every track's place in them, then Claude proposes new ones. Sorting all ${tally(tracks, "track")} again afterwards costs about $${sortAgainUsd.toFixed(2)}.`
+    : `${all}, then Claude proposes new ones.`;
+}
+
+/** A load or propose that failed: say why, and offer the ways on. */
+function Stalled({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <PageShell title={title} back={HOME}>
+      <div className="max-w-xl space-y-6">
+        <p className="text-[var(--color-text-secondary)]">{message}</p>
+        {onRetry && <Button onClick={onRetry}>Try again</Button>}
+      </div>
     </PageShell>
   );
 }
