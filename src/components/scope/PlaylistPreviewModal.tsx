@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
 import { Dialog } from "@/src/components/design/Dialog";
 import { TrackRow } from "@/src/components/design/TrackRow";
+import { trackCount } from "@/src/components/scope/sources";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
 interface PreviewTrack {
@@ -17,6 +18,7 @@ export function PlaylistPreviewModal({
   playlistId,
   liked,
   title,
+  total,
   selected,
   onToggle,
   toggleDisabled,
@@ -26,6 +28,9 @@ export function PlaylistPreviewModal({
   playlistId?: string | null;
   liked?: boolean;
   title: string;
+  /** Spotify's count, as the row prints it. It counts local files and
+   *  episodes, which the list (and a scan) skips. */
+  total?: number;
   /** Whether Scan will read this source; labels the toggle. */
   selected?: boolean;
   /** Include / leave out without closing. No toggle without it. */
@@ -80,6 +85,8 @@ export function PlaylistPreviewModal({
   }
 
   const toggleLabel = selected ? "Leave out" : "Include";
+  // "1 of 12 tracks" when fewer arrive than the row promised.
+  const short = tracks !== null && total !== undefined && tracks.length < total;
 
   return (
     <Dialog
@@ -87,15 +94,20 @@ export function PlaylistPreviewModal({
       onClose={onClose}
       width="lg"
       title={title}
+      // The tag's price sticker: how much this source brings, in mono.
       description={
-        tracks
-          ? `${tracks.length.toLocaleString()} ${tracks.length === 1 ? "track" : "tracks"}`
-          : undefined
+        tracks ? (
+          <span className="mono num">
+            {short
+              ? `${tracks.length.toLocaleString()} of ${trackCount(total)}`
+              : trackCount(tracks.length)}
+          </span>
+        ) : undefined
       }
       actions={
         <>
           {onToggle && (
-            <Button size="sm" onClick={onToggle} disabled={toggleDisabled}>
+            <Button onClick={onToggle} disabled={toggleDisabled}>
               <motion.span
                 key={toggleLabel}
                 initial={{ opacity: 0 }}
@@ -106,7 +118,7 @@ export function PlaylistPreviewModal({
               </motion.span>
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
         </>
@@ -115,22 +127,22 @@ export function PlaylistPreviewModal({
       {/* One reserved height for loading, error and short lists, so the panel
           doesn't leap between them; only a long list grows, to the panel's cap. */}
       <div className="min-h-[min(55dvh,32rem)]">
-        {tracks === null && !failed && (
-          <p className="text-[var(--color-text-tertiary)]">Loading…</p>
-        )}
+        {tracks === null && !failed && <p className="text-ink-2">Loading…</p>}
         {failed && (
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            <p className="text-[var(--color-text-secondary)]">
+            <p className="text-danger">
               Spotify didn&apos;t send this playlist.
             </p>
-            <Button variant="ghost" size="sm" onClick={retry} className="-ml-1">
+            <Button variant="quiet" size="sm" onClick={retry}>
               Try again
             </Button>
           </div>
         )}
         {tracks && tracks.length === 0 && (
-          <p className="text-[var(--color-text-tertiary)]">
-            This playlist is empty.
+          <p className="text-ink-2">
+            {short
+              ? "A scan can't read any of its tracks."
+              : "This playlist is empty."}
           </p>
         )}
         {tracks && tracks.length > 0 && (

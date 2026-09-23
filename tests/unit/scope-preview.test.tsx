@@ -23,6 +23,43 @@ function stubFetch(...replies: Array<{ status: number; body: unknown }>) {
 }
 
 describe("PlaylistPreviewModal on /scope", () => {
+  // A playlist of local files: Spotify counts 3, a scan reads none. Before:
+  // "This playlist is empty." under a row that said 3 tracks.
+  it("says a scan can't read it, not that it's empty, when Spotify counts more", async () => {
+    stubFetch({ status: 200, body: { tracks: [] } });
+    render(
+      <PlaylistPreviewModal
+        open
+        playlistId="p1"
+        title="Tapes"
+        total={3}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText("A scan can't read any of its tracks."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("0 of 3 tracks")).toBeInTheDocument();
+    expect(screen.queryByText("This playlist is empty.")).toBeNull();
+  });
+
+  it("says empty, with a plain count, when nothing is missing", async () => {
+    stubFetch({ status: 200, body: { tracks: [] } });
+    render(
+      <PlaylistPreviewModal
+        open
+        playlistId="p1"
+        title="New"
+        total={0}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText("This playlist is empty."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("0 tracks")).toBeInTheDocument();
+  });
+
   // Before: "Couldn't load tracks: HTTP 500" with Close as the only way on.
   it("offers Try again when Spotify fails, and asks again", async () => {
     const fetchMock = stubFetch(

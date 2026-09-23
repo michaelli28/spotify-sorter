@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  NavLockProvider,
+  useNavLockState,
+} from "@/src/components/design/NavLock";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -92,6 +102,16 @@ describe("/scope loading and failure", () => {
     expect(screen.queryByRole("button", { name: "Scan" })).toBeNull();
   });
 
+  // The top strip holds its room from the first render (spec §7.4): a strip
+  // that arrived with the playlists would push the whole page down.
+  it("holds the top strip from the first render, saying it is loading", () => {
+    stubApi({ playlists: () => new Promise(() => {}) });
+    render(<ScopePage />);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your playlists…",
+    );
+  });
+
   // Before: a failed request looked like a library of one (Liked Songs) and
   // Scan would have saved an empty scope over the real one.
   it("shows an error instead of a one-source library when Spotify fails", async () => {
@@ -100,12 +120,22 @@ describe("/scope loading and failure", () => {
     expect(
       await screen.findByText("Spotify didn't send your playlists."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Spotify didn't send your playlists.",
+    );
     expect(screen.getByText("Spotify said 503")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Scan" })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(
       screen.getByRole("link", { name: "Reconnect Spotify" }),
     ).toHaveAttribute("href", "/api/auth/login");
+    // Before: the strip went with Scan and the page jumped 92px up. Try again
+    // takes Scan's place instead.
+    expect(
+      screen
+        .getByRole("button", { name: "Try again" })
+        .closest("[data-action-bar]"),
+    ).not.toBeNull();
   });
 
   // Before: a rejected fetch left "Loading your library…" up for good.
@@ -135,6 +165,8 @@ describe("/scope loading and failure", () => {
     const connect = screen.getByRole("link", { name: "Connect Spotify" });
     expect(connect).toHaveAttribute("href", "/api/auth/login");
     expect(connect).toHaveAttribute("data-variant", "primary");
+    // In the strip, where Scan would be: nothing jumps when the load ends.
+    expect(connect.closest("[data-action-bar]")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(
       screen.queryByText("No Spotify auth in cache. User must connect."),
@@ -172,6 +204,43 @@ describe("/scope loading and failure", () => {
     expect(
       screen.queryByText("Spotify didn't send your playlists."),
     ).toBeNull();
+  });
+
+  // Before: Try again unmounted as it was pressed, dropping focus to the body.
+  it("keeps focus on Try again while it asks, and hands it to Scan", async () => {
+    const asks = [deferred(), deferred(), deferred()];
+    let calls = 0;
+    stubApi({ playlists: () => asks[calls++]!.promise });
+    const failed: Reply = {
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "Spotify said 503" }),
+    };
+    render(<ScopePage />);
+    asks[0]!.resolve(failed);
+    const retry = await screen.findByRole("button", { name: "Try again" });
+
+    await userEvent.click(retry);
+    expect(retry).toHaveFocus();
+    expect(retry).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your playlists…",
+    );
+    await userEvent.click(retry);
+    expect(calls).toBe(2);
+
+    asks[1]!.resolve(failed);
+    await screen.findByText("Spotify didn't send your playlists.");
+    expect(retry).toHaveFocus();
+    expect(retry).not.toHaveAttribute("aria-disabled");
+
+    await userEvent.click(retry);
+    asks[2]!.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ playlists: PLAYLISTS }),
+    });
+    await waitFor(() => expect(scanButton()).toHaveFocus());
   });
 
   it("reads Liked Songs alone when you have made no playlists", async () => {
@@ -320,6 +389,46 @@ describe("/scope Scan", () => {
     });
   });
 
+  // Spec §5: NavLock on every async operation. Leaving mid-save is already
+  // harmless (see above); the lock says so before the click, not after.
+  it("locks the site nav while Scan saves, and frees it if the save fails", async () => {
+    const save = deferred();
+    stubApi({ patch: () => save.promise });
+    function Lock() {
+      return (
+        <p data-testid="lock">{useNavLockState().locked ? "on" : "off"}</p>
+      );
+    }
+    render(
+      <NavLockProvider>
+        <ScopePage />
+        <Lock />
+      </NavLockProvider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Scan" }));
+    expect(screen.getByTestId("lock")).toHaveTextContent("on");
+    save.resolve({ ok: false, status: 500, json: async () => ({}) });
+    await screen.findByText("Couldn't save your choice. Nothing was read.");
+    // The lock lets go in an effect cleanup, which can land after the line.
+    await waitFor(() =>
+      expect(screen.getByTestId("lock")).toHaveTextContent("off"),
+    );
+  });
+
+  // Before: the count sat unchanged through the save, so the disabled rows
+  // gave no reason for ignoring a click.
+  it("says it is saving while Scan saves", async () => {
+    const save = deferred();
+    stubApi({ patch: () => save.promise });
+    render(<ScopePage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Scan" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Saving 4 of 4 sources…",
+    );
+    save.resolve({ ok: false, status: 500, json: async () => ({}) });
+    await screen.findByText("Couldn't save your choice. Nothing was read.");
+  });
+
   it("frees the choice again when the save fails", async () => {
     stubApi({ patch: () => reply({ error: "boom" }, 500) });
     render(<ScopePage />);
@@ -346,21 +455,23 @@ describe("/scope Scan", () => {
     );
   });
 
-  // Every row is two Tab stops, and Scan sits after all of them (about 220
-  // presses at 105 playlists).
-  it("offers a way past the list to Scan", async () => {
+  // Scan sits in the top strip, before the list, and every row is two Tab
+  // stops: from the last row it is about 220 presses back at 105 playlists.
+  it("offers one stop back to Scan from the end of the list", async () => {
     stubApi();
     render(<ScopePage />);
-    const skip = await screen.findByRole("button", { name: "Skip to Scan" });
+    const back = await screen.findByRole("button", { name: "Back to Scan" });
+    const lastRow = screen.getByRole("button", {
+      name: "Preview Gym, reluctantly, 30 tracks",
+    });
     expect(
-      skip.compareDocumentPosition(box("Late Night")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      lastRow.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    await userEvent.click(skip);
+    await userEvent.click(back);
     expect(scanButton()).toHaveFocus();
     await userEvent.click(screen.getByRole("button", { name: "Deselect all" }));
-    // Nothing to skip to while Scan can't be pressed.
-    expect(screen.queryByRole("button", { name: "Skip to Scan" })).toBeNull();
+    // Nothing to go back to while Scan can't be pressed.
+    expect(screen.queryByRole("button", { name: "Back to Scan" })).toBeNull();
   });
 
   it("cannot scan nothing", async () => {
@@ -397,6 +508,22 @@ describe("/scope filter and bulk choices", () => {
       screen.getByRole("button", { name: "Deselect these 2" }),
     ).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Deselect all" })).toBeNull();
+  });
+
+  // Unfiltered, the bulk buttons change Liked Songs too. Before: on a phone
+  // they sat under it and read as acting on the playlists below only.
+  it("puts the bulk buttons before Liked Songs, which they also change", async () => {
+    stubApi();
+    render(<ScopePage />);
+    const deselect = await screen.findByRole("button", {
+      name: "Deselect all",
+    });
+    expect(
+      deselect.compareDocumentPosition(box("Liked Songs")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await userEvent.click(deselect);
+    expect(box("Liked Songs")).not.toBeChecked();
   });
 
   // Before: "Deselect all" with a filter typed also cleared every hidden
@@ -466,6 +593,55 @@ describe("/scope rows and preview", () => {
     ).toHaveLength(0);
   });
 
+  it("stamps the box while a source is in, and lifts the stamp when it is left out", async () => {
+    stubApi();
+    render(<ScopePage />);
+    const row = (
+      await screen.findByRole("checkbox", { name: "Late Night" })
+    ).closest("li")!;
+    const stamp = row.querySelector("[data-stamp]");
+    expect(stamp).toHaveAttribute("data-stamp", "in");
+    await userEvent.click(box("Late Night"));
+    expect(stamp).toHaveAttribute("data-stamp", "out");
+    await userEvent.click(box("Late Night"));
+    expect(stamp).toHaveAttribute("data-stamp", "in");
+  });
+
+  // Brief §3 Scope: the playlist's real image, falling back to a plain sleeve.
+  // The art is decoration: the box is still named by the playlist alone.
+  it("prints each playlist's own cover, and a plain sleeve when it has none or it fails", async () => {
+    const art = "https://i.scdn.co/image/ab67616d0000b273aaaa";
+    stubApi({
+      playlists: () =>
+        reply({
+          playlists: [
+            { id: "p0", name: "Covered", track_count: 3, cover_url: art },
+            ...PLAYLISTS,
+          ],
+        }),
+    });
+    render(<ScopePage />);
+    const covered = (
+      await screen.findByRole("checkbox", { name: "Covered" })
+    ).closest("li")!;
+    const img = covered.querySelector("img");
+    expect(img).toHaveAttribute("src", art);
+    expect(img).toHaveAttribute("alt", "");
+
+    const bare = box("Late Night").closest("li")!;
+    expect(bare.querySelector("img")).toBeNull();
+    expect(
+      within(bare).getByRole("img", { name: "No cover art", hidden: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.error(img!);
+    expect(covered.querySelector("img")).toBeNull();
+    expect(
+      within(covered).getByRole("img", { name: "No cover art", hidden: true }),
+    ).toBeInTheDocument();
+    expect(box("Covered")).toBeInTheDocument();
+  });
+
   it("opens the preview from a row's track count", async () => {
     stubApi({
       tracks: () =>
@@ -493,6 +669,35 @@ describe("/scope rows and preview", () => {
         name: "Preview Late Drives, 1 track",
       }),
     ).toBeInTheDocument();
+  });
+
+  // The row prints Spotify's total, which counts local files and episodes;
+  // the preview lists only what a scan can read. Before: "12 tracks" on the
+  // row and "1 track" on the tag, with nothing tying the two together.
+  it("tells the preview's count from the row's when Spotify sends fewer", async () => {
+    stubApi({
+      tracks: () =>
+        reply({
+          tracks: [{ id: "t1", title: "Nights", artist_name: "Frank Ocean" }],
+        }),
+    });
+    render(<ScopePage />);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Preview Late Night, 12 tracks",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Late Night" });
+    expect(await within(dialog).findByText("1 of 12 tracks")).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Close" }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Preview Late Drives, 1 track" }),
+    );
+    const same = await screen.findByRole("dialog", { name: "Late Drives" });
+    expect(await within(same).findByText("1 track")).toBeInTheDocument();
   });
 
   it("leaves a playlist out from inside its preview", async () => {
