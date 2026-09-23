@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planApply, type ApplyCache } from "@/src/components/apply/plan";
+import { catalogueSpecs } from "@/src/lib/sleeves/spec";
 
 const AT = "2026-09-01T00:00:00.000Z";
 
@@ -87,6 +88,36 @@ describe("planApply", () => {
     );
     expect(plan.rows.map((r) => r.name)).toEqual(["Dusk", "Rain"]);
     expect(plan.prefix).toBe("✨");
+  });
+
+  // The press list prints the same number and sleeve as home and review.
+  it("numbers rows in catalogue order and gives each its catalogue sleeve", () => {
+    const cats = {
+      c2: category("Rain"),
+      c1: { ...category("Dusk"), temperature: "glow" as const },
+    };
+    const plan = planApply(cache({ categories: cats }));
+    expect(plan.rows.map((r) => r.catalogueNo)).toEqual([1, 2]);
+    const specs = catalogueSpecs([
+      { id: "c2", name: "Rain", description: "" },
+      { id: "c1", name: "Dusk", description: "", temperature: "glow" },
+    ]);
+    expect(plan.rows[0]!.spec).toEqual(specs.get("c2"));
+    expect(plan.rows[1]!.spec).toEqual(specs.get("c1"));
+    // The owner's colour wins over the guess.
+    expect(plan.rows[1]!.spec.temp).toBe("glow");
+  });
+
+  // The seed is id|name as saved, so a prefixed name prints the review sleeve.
+  it("prints the sleeve from the saved name, prefix and all", () => {
+    const plan = planApply(
+      cache({ categories: { c1: category("✨ Dusk"), c2: category("Rain") } }),
+    );
+    const specs = catalogueSpecs([
+      { id: "c1", name: "✨ Dusk", description: "" },
+      { id: "c2", name: "Rain", description: "" },
+    ]);
+    expect(plan.rows[0]!.spec).toEqual(specs.get("c1"));
   });
 
   it("counts the tracks that have no category yet", () => {

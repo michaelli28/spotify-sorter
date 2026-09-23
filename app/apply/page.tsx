@@ -1,20 +1,44 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
-import { Button, ButtonLink } from "@/src/components/design/Button";
-import { useNavLock } from "@/src/components/design/NavLock";
-import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { ActionBar } from "@/src/components/design/ActionBar";
 import {
-  ApplyManifest,
-  type RowState,
-} from "@/src/components/apply/ApplyManifest";
-import { SuccessCredits } from "@/src/components/apply/SuccessCredits";
+  Button,
+  ButtonLink,
+  buttonClass,
+} from "@/src/components/design/Button";
+import { useNavLock } from "@/src/components/design/NavLock";
+import { DURATION, EASE_OUT } from "@/src/components/design/motion";
 import {
   planApply,
   type ApplyCache,
   type ApplyPlan,
 } from "@/src/components/apply/plan";
+import { PrintRun } from "@/src/components/apply/PrintRun";
+import { ProgressBand } from "@/src/components/design/ProgressBand";
+import { CreditsFoot, CreditsHead } from "@/src/components/apply/Credits";
+import { useArmed } from "@/src/components/apply/useArmed";
+import { useCoverRun } from "@/src/components/apply/useCoverRun";
+import { useFollowRun } from "@/src/components/apply/useFollowRun";
+import { usePrintPacer } from "@/src/components/apply/usePrintPacer";
+import {
+  coverNotice,
+  coverStatus,
+  tallyCovers,
+  type CoverNotice,
+  type CoverState,
+} from "@/src/components/apply/covers";
+import {
+  freshRows,
+  printTarget,
+  printedTitle,
+  runStatus,
+  sleeveStates,
+  writtenPlaylists,
+  type Progress,
+  type RunView,
+} from "@/src/components/apply/print-run";
 import { readEventStream } from "@/src/lib/client/read-event-stream";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import type { ApplyResult } from "@/src/lib/pipeline/apply";
@@ -34,12 +58,6 @@ type Run =
 // "ready" also covers loading: same header, Apply disabled until the plan lands.
 type View = "ready" | "empty" | "cacheError" | Exclude<Run["kind"], "idle">;
 
-/** `done` playlists are written; the server is on index `done` next. */
-interface Progress {
-  done: number;
-  total: number;
-}
-
 const count = (n: number) => n.toLocaleString("en-US");
 const plural = (n: number, word: string) => (n === 1 ? word : `${word}s`);
 
@@ -47,29 +65,8 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : "Unknown error";
 }
 
-function rowStates(
-  view: View,
-  rows: number,
-  progress: Progress | null,
-): RowState[] {
-  return Array.from({ length: rows }, (_, i) => {
-    if (view === "ready") return "idle";
-    const done = progress?.done ?? 0;
-    if (i < done) return "written";
-    if (progress && i === done) {
-      if (view === "running") return "current";
-      if (view === "error") return "failed";
-    }
-    return "pending";
-  });
-}
-
 function Figure({ n }: { n: number }) {
-  return (
-    <span className="tabular-nums text-[var(--color-text-primary)]">
-      {count(n)}
-    </span>
-  );
+  return <span className="num text-ink">{count(n)}</span>;
 }
 
 function Facts({ plan: { tracks, toCreate, toUpdate } }: { plan: ApplyPlan }) {
@@ -93,13 +90,25 @@ function Facts({ plan: { tracks, toCreate, toUpdate } }: { plan: ApplyPlan }) {
   );
 }
 
+const LEDE = "mt-4 max-w-2xl text-lead text-ink-2";
+
+// Spec §3.4: Apply also replaces each playlist's cover, so the confirmation names it.
+const COVER_LINE = (
+  <p className="mt-1 max-w-2xl text-ink-2">
+    Each playlist&apos;s sleeve becomes its Spotify cover.
+  </p>
+);
+
 export default function ApplyPage() {
   const [library, setLibrary] = useState<Library>({ kind: "loading" });
   const [reads, setReads] = useState(0);
   const [run, setRun] = useState<Run>({ kind: "idle" });
   const [progress, setProgress] = useState<Progress | null>(null);
+  // Retry covers was pressed: its notice stays up while the retry works.
+  const [retrying, setRetrying] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const { pageEase, fade } = useMotionConfig();
+  const { reduced } = useMotionConfig();
+  const covers = useCoverRun();
 
   useEffect(() => {
     let live = true;
@@ -119,6 +128,7 @@ export default function ApplyPage() {
   }, [reads]);
 
   const plan = library.kind === "ready" ? library.plan : null;
+  const rows = useMemo(() => plan?.rows ?? [], [plan]);
   const view: View =
     run.kind !== "idle"
       ? run.kind
@@ -127,8 +137,50 @@ export default function ApplyPage() {
         : plan?.rows.length === 0
           ? "empty"
           : "ready";
+  const result = run.kind === "done" ? run.result : null;
 
-  useNavLock(view === "running");
+  const written = useMemo(
+    () => (plan && result ? writtenPlaylists(rows, result) : null),
+    [plan, rows, result],
+  );
+  const fresh = useMemo(
+    () => (plan && result ? freshRows(rows, result) : undefined),
+    [plan, rows, result],
+  );
+  const tally = tallyCovers(
+    rows.flatMap((r): CoverState[] => {
+      const s = covers.states.get(r.id);
+      return s ? [s] : [];
+    }),
+  );
+
+  const notice = view === "done" ? coverNotice(tally, { retrying }) : null;
+  const noticeKind = notice?.kind ?? null;
+  // Once the covers are settled and some went on, the ones that didn't differ.
+  const coversDiffer =
+    view === "done" && !tally.running && tally.ok > 0 && tally.ok < tally.total;
+  const armed = useArmed(view === "ready" && plan !== null);
+  const follow = useFollowRun(view === "running");
+
+  const runView: RunView =
+    view === "running" || view === "error" || view === "lost" || view === "done"
+      ? view
+      : "ready";
+  const printed = usePrintPacer(
+    printTarget({ view: runView, rows: rows.length, progress }),
+    reduced,
+  );
+  const states = sleeveStates({
+    view: runView,
+    rows: rows.length,
+    progress,
+    printed,
+    written: rows.map((r) => written?.has(r.id) ?? false),
+    registered: rows.map((r) => covers.states.get(r.id) === "ok"),
+  });
+
+  // Covers upload after the write, one at a time: still work, still locked.
+  useNavLock(view === "running" || tally.running);
 
   // The control that was pressed is gone after each of these swaps; the new
   // title is where a keyboard or screen-reader user picks up.
@@ -138,10 +190,30 @@ export default function ApplyPage() {
     }
   }, [view]);
 
-  // Only ever from a click: nothing on this page writes on load.
-  async function start() {
+  // A retry that clears every failure takes Retry covers away with it: don't
+  // leave keyboard focus on <body>.
+  const lastNotice = useRef<CoverNotice["kind"] | null>(null);
+  useEffect(() => {
+    const was = lastNotice.current;
+    lastNotice.current = noticeKind;
+    const dropped =
+      !document.activeElement || document.activeElement === document.body;
+    if (was === "retrying" && noticeKind === null && dropped) {
+      heading.current?.focus();
+    }
+  }, [noticeKind]);
+
+  // Only ever from a click: nothing on this page writes on load. `fresh` is a
+  // new run from the first playlist; Rejoin joins the one already going.
+  async function start(fresh: boolean) {
+    if (!plan) return;
+    const current = plan;
     setRun({ kind: "running" });
-    setProgress(null);
+    if (fresh) {
+      setProgress(null);
+      covers.reset();
+      setRetrying(false);
+    }
     let res: Response;
     try {
       res = await fetch("/api/spotify/apply", { method: "POST" });
@@ -157,7 +229,17 @@ export default function ApplyPage() {
           setProgress({ done, total });
         } else if (event === "done") {
           settled = true;
-          setRun({ kind: "done", result: data as ApplyResult });
+          const result = data as ApplyResult;
+          setRun({ kind: "done", result });
+          setRetrying(false);
+          // Spec §7.1: covers only after `done`, so no upload's token refresh
+          // can race Apply's cache writes. A cover failure never fails Apply.
+          const ids = writtenPlaylists(current.rows, result);
+          void covers.run(
+            current.rows
+              .filter((r) => ids.has(r.id))
+              .map(({ id, spec }) => ({ id, spec })),
+          );
         } else if (event === "error") {
           settled = true;
           const { message } = data as { message?: string };
@@ -175,18 +257,12 @@ export default function ApplyPage() {
     if (!settled) setRun({ kind: "lost" });
   }
 
-  if (view === "done") {
-    return (
-      <PageShell>
-        {run.kind === "done" && (
-          <SuccessCredits
-            result={run.result}
-            prefix={plan?.prefix ?? ""}
-            tracks={plan?.tracks ?? run.result.tracks_added}
-            headingRef={heading}
-          />
-        )}
-      </PageShell>
+  function retryCovers() {
+    setRetrying(true);
+    void covers.run(
+      rows
+        .filter((r) => covers.states.get(r.id) === "failed")
+        .map(({ id, spec }) => ({ id, spec })),
     );
   }
 
@@ -195,176 +271,201 @@ export default function ApplyPage() {
       Home
     </ButtonLink>
   );
-  const retry = (label: string) => <Button onClick={start}>{label}</Button>;
-  const written = progress?.done ?? 0;
+  const done = progress?.done ?? 0;
+  const total = progress?.total ?? rows.length;
 
-  let title: string;
+  let status: ReactNode = "";
+  let end: ReactNode;
+  let title = "";
   let body: ReactNode = null;
   let actions: ReactNode = null;
   switch (view) {
     case "ready":
-      title = "About to apply.";
+      end = (
+        <Button
+          disabled={!plan}
+          aria-disabled={(plan && !armed) || undefined}
+          onClick={(e) => {
+            // detail 2+: the rest of a double click. Keyboard presses are 0.
+            if (!armed || e.detail > 1) return;
+            void start(true);
+          }}
+        >
+          Apply
+        </Button>
+      );
+      title = "What Apply writes";
       body = (
-        <p className="mt-6 min-h-[1lh] max-w-2xl text-lg leading-relaxed text-[var(--color-text-secondary)]">
-          {plan && (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={fade}
-            >
-              <Facts plan={plan} />
-            </motion.span>
-          )}
-        </p>
+        <motion.div
+          initial={false}
+          animate={{ opacity: plan ? 1 : 0 }}
+          transition={{ duration: reduced ? 0 : DURATION.state }}
+        >
+          <p className={`${LEDE} min-h-[1lh]`}>
+            {plan && <Facts plan={plan} />}
+          </p>
+          {COVER_LINE}
+        </motion.div>
       );
-      actions = (
-        <>
-          <Button onClick={start} disabled={!plan}>
-            Apply
-          </Button>
-          {/* /classify starts a paid run on load while tracks are unsorted. */}
-          {plan &&
-            (plan.unsorted === 0 ? (
-              <ButtonLink href="/classify" variant="ghost">
-                Tune the fit
-              </ButtonLink>
-            ) : (
-              home
-            ))}
-        </>
-      );
+      // /classify starts a paid run on load while tracks are unsorted.
+      actions =
+        plan &&
+        (plan.unsorted === 0 ? (
+          <ButtonLink href="/classify" variant="ghost">
+            Tune the fit
+          </ButtonLink>
+        ) : (
+          home
+        ));
       break;
     case "empty":
+      // No next step this page can offer: Home is a way out, not the action.
+      end = null;
       title = "Nothing to apply yet.";
       actions = home;
       break;
     case "cacheError":
+      end = (
+        <Button
+          onClick={() => {
+            setLibrary({ kind: "loading" });
+            setReads((n) => n + 1);
+          }}
+        >
+          Try again
+        </Button>
+      );
       title = "Couldn't read your library.";
-      actions = (
+      actions = home;
+      break;
+    case "running":
+      status = runStatus(progress, rows);
+      end = (
+        <ProgressBand
+          value={done}
+          total={total}
+          label="Playlists written"
+          className="w-28 tab:w-56"
+        />
+      );
+      title = "Placing tracks…";
+      body = plan && (
         <>
-          <Button
-            onClick={() => {
-              setLibrary({ kind: "loading" });
-              setReads((n) => n + 1);
-            }}
-          >
-            Try again
-          </Button>
-          {home}
+          <p className={LEDE}>
+            <Facts plan={plan} />
+          </p>
+          {/* In the cover line's place: the browser uploads the covers
+              after `done`, so a closed tab gets none. */}
+          <p className="mt-1 max-w-2xl text-ink-2">
+            Keep this page open: covers go on after the last playlist.
+          </p>
         </>
       );
       break;
-    case "running":
-      title = "Placing tracks…";
-      break;
     case "error":
-      title =
-        written > 0 && progress
-          ? `Stopped at ${count(written)} of ${count(progress.total)}.`
-          : "Couldn't start.";
+      end = <Button onClick={() => start(true)}>Try again</Button>;
+      // Once the stream said where it was, the stopped row shows it: "0 of 41".
+      title = progress ? printedTitle(done, total) : "Couldn't start.";
       body = (
         <>
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--color-text-secondary)]">
-            {run.kind === "error" && run.message}
-          </p>
-          {written > 0 && (
-            <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-tertiary)]">
+          <p className={LEDE}>{run.kind === "error" && run.message}</p>
+          {done > 0 && (
+            <p className="mt-1 max-w-2xl text-ink-2">
               What&apos;s written stays. Trying again picks up from there.
             </p>
           )}
         </>
       );
-      actions = (
-        <>
-          {retry("Try again")}
-          {home}
-        </>
-      );
+      actions = home;
       break;
     case "lost":
+      // Not "Reconnect": on this page that's the Spotify sign-in, for covers.
+      end = <Button onClick={() => start(false)}>Rejoin the write</Button>;
       title = "Lost the connection.";
+      // Two lines, like the run's, so the list doesn't jump when it drops.
       body = (
-        <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--color-text-secondary)]">
-          The write may still be running.
-        </p>
-      );
-      actions = (
         <>
-          {retry("Reconnect")}
-          {home}
+          <p className={LEDE}>
+            {done > 0 && <span>{printedTitle(done, total)} </span>}
+            <span>The write may still be running.</span>
+          </p>
+          <p className="mt-1 max-w-2xl text-ink-2">Nothing is added twice.</p>
         </>
+      );
+      actions = home;
+      break;
+    case "done":
+      status = coverStatus(tally);
+      end = (
+        <a href="spotify:" data-variant="primary" className={buttonClass()}>
+          Open Spotify
+        </a>
       );
       break;
   }
 
-  const current =
-    progress && progress.done < progress.total
-      ? plan?.rows[progress.done]
-      : undefined;
+  const enter = reduced
+    ? { duration: DURATION.reduced }
+    : { duration: DURATION.state, ease: EASE_OUT };
 
   return (
     <PageShell>
-      <motion.header
-        key={view}
-        initial={view === "ready" ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={pageEase}
-      >
-        <h1
-          ref={heading}
-          tabIndex={-1}
-          className="font-[family-name:var(--font-display)] text-display-2 tracking-tight text-[var(--color-text-primary)] outline-none"
+      <ActionBar status={status} end={end} />
+
+      {view === "done" && result ? (
+        <CreditsHead
+          result={result}
+          tracks={plan?.tracks ?? result.tracks_added}
+          notice={notice}
+          onRetryCovers={retryCovers}
+          headingRef={heading}
+          busy={tally.running}
+        />
+      ) : (
+        <motion.header
+          key={view}
+          initial={
+            view === "ready" ? false : { opacity: 0, y: reduced ? 0 : 8 }
+          }
+          animate={{ opacity: 1, y: 0 }}
+          transition={enter}
         >
-          {title}
-        </h1>
-        {body}
-        {actions && (
-          <div className="-ml-1 mt-10 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+          <h1
+            ref={heading}
+            tabIndex={-1}
+            className="font-display text-display-2 text-ink outline-none"
+          >
+            {title}
+          </h1>
+          {body}
+          {/* Holds its row while empty, so the list doesn't move on Apply.
+              Not on phones: the titles wrap differently there anyway. */}
+          <div className="mt-4 flex min-h-11 flex-wrap items-center gap-x-8 max-tab:empty:hidden">
             {actions}
           </div>
-        )}
-      </motion.header>
-
-      {/* Sits where the facts and actions were, so the list below doesn't
-          move when Apply is pressed; the bottom margin stays out of the
-          stuck band. */}
-      {view === "running" && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={fade}
-          className="sticky top-0 z-10 -mx-gutter mb-[calc(3rem_+_var(--spacing-section))] mt-3 bg-[var(--color-bg-base)] px-gutter pb-4 pt-3"
-        >
-          <p
-            role="status"
-            className="min-h-[1lh] text-lg leading-relaxed text-[var(--color-text-secondary)]"
-          >
-            {progress ? (
-              <>
-                <Figure n={Math.min(progress.done + 1, progress.total)} /> of{" "}
-                <Figure n={progress.total} />
-                {current && ` · ${current.name}`}
-              </>
-            ) : (
-              "Starting…"
-            )}
-          </p>
-          <div className="mt-4">
-            <ProgressBar
-              value={written}
-              total={progress?.total ?? 0}
-              label="Playlists written"
-            />
-          </div>
-        </motion.div>
+        </motion.header>
       )}
 
-      {plan && plan.rows.length > 0 && (
-        <ApplyManifest
-          rows={plan.rows}
-          states={rowStates(view, plan.rows.length, progress)}
-          className="mt-section"
+      {rows.length > 0 && (
+        <PrintRun
+          rows={rows}
+          states={states}
+          playlists={written ?? undefined}
+          fresh={fresh}
+          speak={
+            view === "running" || view === "error" || view === "lost"
+              ? "run"
+              : coversDiffer
+                ? "covers"
+                : undefined
+          }
+          follow={follow}
+          className="mt-12"
         />
+      )}
+
+      {view === "done" && plan && (
+        <CreditsFoot prefix={plan.prefix} />
       )}
     </PageShell>
   );
