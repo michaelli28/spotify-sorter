@@ -3,10 +3,14 @@ import { useEffect, useRef } from "react";
 import type { LabelTrack } from "@/src/lib/labeling/schema";
 
 export function SongBlock({ track }: { track: LabelTrack }) {
-  // The block remounts per item: move focus to the new title so a keyboard
-  // user starts the next song at its top, not at the page's.
+  // The block remounts per item: start the next song at the top of the page,
+  // with focus on its title. The scroll is explicit because in the wide layout
+  // the title sits in a sticky rail, where focus() alone never scrolls.
   const titleRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => titleRef.current?.focus(), []);
+  useEffect(() => {
+    if (window.scrollY > 0) window.scrollTo({ top: 0 });
+    titleRef.current?.focus({ preventScroll: true });
+  }, []);
 
   return (
     <section className="space-y-5">

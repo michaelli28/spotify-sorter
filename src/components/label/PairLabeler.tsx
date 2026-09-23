@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef } from "react";
 import { Button } from "@/src/components/design/Button";
 import { Definition } from "./Definition";
+import { ErrorLine } from "./ErrorLine";
 import { FOCUS_RING } from "./focus";
 import type { LabelCategory } from "./logic";
 import type { PairSuggestion } from "@/src/lib/labeling/schema";
@@ -72,10 +73,10 @@ export function PairLabeler({
   }, []);
 
   return (
-    <div className="max-w-xl border-t border-[var(--color-border-default)] pt-8">
+    <div className="max-w-xl border-t border-[var(--color-border-default)] pt-8 lg:border-t-0 lg:pt-0">
       <p
         id={nameId}
-        className="font-[family-name:var(--font-display)] text-2xl text-[var(--color-text-primary)]"
+        className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-[var(--color-text-primary)]"
       >
         {category.name}
       </p>
@@ -119,57 +120,60 @@ export function PairLabeler({
           </div>
         </div>
       )}
-      {error && (
-        <p role="alert" className="mt-6 text-sm text-[var(--color-danger)]">
-          {error}
-        </p>
-      )}
+      <ErrorLine error={error} className="mt-6" />
       {saved && (
         <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
           Saved as {ANSWERS.find((a) => a.id === saved)!.label.toLowerCase()}.
         </p>
       )}
-      <div className="mt-8 flex items-baseline gap-8">
+      {/* Answers get their own row: Next beside Yes invited a mis-tap on a
+          write that can't be taken back. Yes and No weigh the same. */}
+      <div
+        role="group"
+        aria-labelledby={nameId}
+        className="mt-8 flex flex-wrap items-baseline gap-x-10"
+      >
+        {ANSWERS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            disabled={busy}
+            className={a.id === "cant_judge" ? CANT_JUDGE : VERDICT}
+            onClick={() =>
+              onAnswer(
+                a.id,
+                Math.max(0, Math.round(performance.now() - shownAt.current)),
+                sawSuggestion.current || wasSeen(),
+              )
+            }
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-8 flex items-center gap-3 border-t border-[var(--color-border-default)] pt-3">
         <Button
           variant="ghost"
+          size="sm"
           onClick={onBack}
           disabled={!canBack || busy}
-          className={FOCUS_RING}
         >
           Back
         </Button>
         <Button
           variant="ghost"
+          size="sm"
           onClick={onNext}
           disabled={!canNext || busy}
-          className={FOCUS_RING}
         >
           Next
         </Button>
-        <div
-          role="group"
-          aria-labelledby={nameId}
-          className="ml-auto flex items-baseline gap-10"
-        >
-          {ANSWERS.map((a) => (
-            <Button
-              key={a.id}
-              variant={a.id === "cant_judge" ? "ghost" : "primary"}
-              disabled={busy}
-              className={FOCUS_RING}
-              onClick={() =>
-                onAnswer(
-                  a.id,
-                  Math.max(0, Math.round(performance.now() - shownAt.current)),
-                  (sawSuggestion.current || wasSeen()),
-                )
-              }
-            >
-              {a.label}
-            </Button>
-          ))}
-        </div>
       </div>
     </div>
   );
 }
+
+const ANSWER =
+  "inline-flex min-h-11 items-center px-1 tracking-tight transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50";
+const VERDICT = `${ANSWER} text-lg font-medium text-[var(--color-text-primary)] hover:text-[var(--color-accent)]`;
+const CANT_JUDGE = `${ANSWER} text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]`;

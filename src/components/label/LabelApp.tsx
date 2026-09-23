@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import clsx from "clsx";
 import { motion } from "framer-motion";
-import { Button } from "@/src/components/design/Button";
+import { Button, buttonClass } from "@/src/components/design/Button";
+import { useNavLock } from "@/src/components/design/NavLock";
 import { PageShell } from "@/src/components/design/PageShell";
-import { useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { EASE_OUT_EXPO, useMotionConfig } from "@/src/hooks/useMotionConfig";
 import type { LabelInput, LabelState } from "@/src/lib/labeling/schema";
 import { loadLabelState, postLabel } from "./api";
-import { FOCUS_RING } from "./focus";
 import {
   MODES,
   bulkAcceptInputs,
@@ -17,10 +18,10 @@ import {
   firstUnfinishedMode,
   formatLocal,
   forwardIndex,
-  isOpen,
   itemsFor,
   markDone,
   nextIndex,
+  openCount,
   prevIndex,
   type Mode,
 } from "./logic";
@@ -37,6 +38,14 @@ type Load =
   | { kind: "failed"; message: string }
   | { kind: "ready"; state: LabelState };
 
+// Which way the queue just moved: forward after Save/Next/Continue, back
+// after Back, neither after a tab switch. Only the entry motion reads it.
+type Direction = -1 | 0 | 1;
+
+// Bulk accept: null = idle, "confirm" = asking, {done,total} = running.
+type Bulk = null | "confirm" | { done: number; total: number };
+type BulkResult = { saved: number; total: number };
+
 const FINISHED: Record<Mode, string> = {
   songs: "Every song is labeled.",
   pairs: "Every pair is labeled.",
@@ -46,10 +55,12 @@ const FINISHED: Record<Mode, string> = {
 
 export function LabelApp() {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useState<Mode>("songs");
   // Explicit position per mode (after Back or a save); unset = first open,
   // unlabeled item.
   const [cursor, setCursor] = useState<Partial<Record<Mode, number>>>({});
+  const [dir, setDir] = useState<Direction>(0);
   // Labels saved in this page session only, for Back. Never loaded from disk.
   const [session, setSession] = useState<Record<string, SavedAnswer>>({});
   const [pairSession, setPairSession] = useState<Record<string, PairAnswer>>(
@@ -59,8 +70,6 @@ export function LabelApp() {
   const [now, setNow] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Bulk accept: null = idle, "confirm" = asking, {done,total} = running.
-  // Deliberately NOT a window.confirm — a modal dialog blocks the page.
   // Whether the model's guesses are on screen. Session-wide and sticky, so
   // "label the rest of these blind" is one click rather than one per song.
   const [showSuggestions, setShowSuggestions] = useState(true);
@@ -70,9 +79,17 @@ export function LabelApp() {
   // from history), so this set is what keeps the request body honest.
   const seen = useRef<Set<string>>(new Set());
   const markSeen = (id: string) => seen.current.add(id);
-  const [bulk, setBulk] = useState<
-    null | "confirm" | { done: number; total: number }
-  >(null);
+  // Deliberately NOT a modal dialog: it would block the page.
+  const [bulk, setBulk] = useState<Bulk>(null);
+  // How the last run ended, until the next write or queue switch. Not set
+  // after a failure: the error line already says how far it got.
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
+  // Stop is checked between requests, so the one in flight still lands and
+  // the count stays exact.
+  const stopRequested = useRef(false);
+  const [stopping, setStopping] = useState(false);
+  const running = typeof bulk === "object" && bulk !== null;
+  useNavLock(running);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,13 +106,23 @@ export function LabelApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  function retry() {
+    setLoad({ kind: "loading" });
+    setAttempt((a) => a + 1);
+  }
 
   if (load.kind !== "ready") {
     return (
-      <Shell>
+      <Shell header={<HomeLink locked={false} />}>
         {load.kind === "failed" && (
-          <p className="text-[var(--color-text-secondary)]">{load.message}</p>
+          <>
+            <p className="text-[var(--color-text-secondary)]">{load.message}</p>
+            <Button className="mt-6" onClick={retry}>
+              Try again
+            </Button>
+          </>
         )}
       </Shell>
     );
@@ -105,14 +132,28 @@ export function LabelApp() {
   const items = itemsFor(state, mode);
   const index = cursor[mode] ?? nextIndex(items, -1, now);
   const doneCount = items.filter((i) => i.done).length;
-  // Unlabeled is not the same as actionable: relabel items are time-locked one
-  // by one, and bulk accept can only write the open ones. One value keeps the
-  // affordance and the count it advertises honest together.
-  const openUnlabeled = items.filter((i) => !i.done && isOpen(i, now));
+  // One value keeps the bulk affordance and the count it advertises honest
+  // together: bulk accept can only write the open items.
+  const openUnlabeled = openCount(items, now);
+  const continueTo = MODES.find(
+    (m) => m.id !== mode && openCount(itemsFor(state, m.id), now) > 0,
+  );
+
+  function selectMode(m: Mode, direction: Direction) {
+    setMode(m);
+    setDir(direction);
+    setError(null);
+    setNow(Date.now());
+    // A confirm belongs to the queue it was opened on; letting it follow the
+    // switch would aim it at a queue nobody opened it for.
+    setBulk(null);
+    setBulkResult(null);
+  }
 
   async function submit(input: LabelInput, id: string, remember?: SavedAnswer) {
     setBusy(true);
     setError(null);
+    setBulkResult(null);
     const r = await postLabel(input);
     setBusy(false);
     if (!r.ok) {
@@ -127,6 +168,7 @@ export function LabelApp() {
     }
     setLoad({ kind: "ready", state: next });
     setNow(t);
+    setDir(1);
     const after = nextIndex(itemsFor(next, mode), index, t);
     setCursor((c) => ({ ...c, [mode]: after === -1 ? undefined : after }));
   }
@@ -139,9 +181,7 @@ export function LabelApp() {
     const inputs: LabelInput[] =
       mode === "pairs"
         ? bulkAcceptPairInputs(
-            itemsFor(state, mode) as Parameters<
-              typeof bulkAcceptPairInputs
-            >[0],
+            itemsFor(state, mode) as Parameters<typeof bulkAcceptPairInputs>[0],
             { definitions_sha256: state.definitions_sha256, elapsed_ms: 0 },
           )
         : bulkAcceptInputs(
@@ -156,15 +196,20 @@ export function LabelApp() {
             },
           );
     setError(null);
+    stopRequested.current = false;
     setBulk({ done: 0, total: inputs.length });
-    for (const [i, input] of inputs.entries()) {
+    let saved = 0;
+    let failed = false;
+    for (const input of inputs) {
+      if (stopRequested.current) break;
       const r = await postLabel(input);
       if (!r.ok) {
-        setError(`Stopped after ${i} of ${inputs.length}: ${r.message}`);
-        setBulk(null);
+        setError(`Stopped after ${saved} of ${inputs.length}: ${r.message}`);
+        failed = true;
         break;
       }
-      setBulk({ done: i + 1, total: inputs.length });
+      saved += 1;
+      setBulk({ done: saved, total: inputs.length });
     }
     // Re-read rather than patching locally: this touched most of the queue.
     const reloaded = await loadLabelState();
@@ -173,6 +218,13 @@ export function LabelApp() {
       setCursor((c) => ({ ...c, [mode]: undefined }));
     }
     setBulk(null);
+    setStopping(false);
+    if (!failed) setBulkResult({ saved, total: inputs.length });
+  }
+
+  function stop() {
+    stopRequested.current = true;
+    setStopping(true);
   }
 
   // From the finished/locked line (-1), Back reaches the last open item.
@@ -180,6 +232,7 @@ export function LabelApp() {
 
   function back() {
     setError(null);
+    setDir(-1);
     setCursor((c) => ({ ...c, [mode]: backTo }));
   }
 
@@ -187,6 +240,7 @@ export function LabelApp() {
   // finished line.
   function next() {
     setError(null);
+    setDir(1);
     const f = forwardIndex(items, index, now);
     setCursor((c) => ({ ...c, [mode]: f === -1 ? undefined : f }));
   }
@@ -194,21 +248,34 @@ export function LabelApp() {
   let body: React.ReactNode;
   if (index === -1) {
     body = (
-      <div className="flex items-baseline gap-8">
-        <QuietLine>{emptyLine(state, mode)}</QuietLine>
-        {backTo !== -1 && (
-          <Button variant="ghost" onClick={back} className={FOCUS_RING}>
-            Back
-          </Button>
+      <Item itemKey={`${mode}:end`} dir={dir}>
+        <p className="font-[family-name:var(--font-display)] text-2xl tracking-tight text-[var(--color-text-secondary)]">
+          {emptyLine(state, mode)}
+        </p>
+        {(continueTo || backTo !== -1) && (
+          <div className="mt-8 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            {continueTo && (
+              <Button onClick={() => selectMode(continueTo.id, 1)}>
+                Continue to {continueTo.label}
+              </Button>
+            )}
+            {backTo !== -1 && (
+              <Button variant="ghost" onClick={back}>
+                Back
+              </Button>
+            )}
+          </div>
         )}
-      </div>
+      </Item>
     );
   } else if (mode === "pairs") {
     const pair = state.pairs[index]!;
     const category = state.categories.find((c) => c.id === pair.category_id);
     body = (
-      <Item itemKey={`pairs:${pair.pair_id}`}>
-        <SongBlock track={pair} />
+      <Item itemKey={`pairs:${pair.pair_id}`} dir={dir} className={RAIL_GRID}>
+        <div className={RAIL}>
+          <SongBlock track={pair} />
+        </div>
         {category ? (
           <PairLabeler
             key={pair.pair_id}
@@ -219,7 +286,7 @@ export function LabelApp() {
             wasSeen={() => seen.current.has(`pairs:${pair.pair_id}`)}
             onSeen={() => markSeen(`pairs:${pair.pair_id}`)}
             saved={pairSession[pair.pair_id]}
-            busy={busy}
+            busy={busy || running}
             error={error}
             canBack={backTo !== -1}
             onBack={back}
@@ -247,7 +314,9 @@ export function LabelApp() {
             }
           />
         ) : (
-          <QuietLine>Unknown category {pair.category_id}.</QuietLine>
+          <p className="text-[var(--color-text-secondary)]">
+            Unknown category {pair.category_id}.
+          </p>
         )}
       </Item>
     );
@@ -263,8 +332,10 @@ export function LabelApp() {
     )[index]!;
     const key = `${mode}:${track.track_id}`;
     body = (
-      <Item itemKey={key}>
-        <SongBlock track={track} />
+      <Item itemKey={key} dir={dir} className={RAIL_GRID}>
+        <div className={RAIL}>
+          <SongBlock track={track} />
+        </div>
         <TrackLabeler
           key={key}
           categories={categoryOrder(state.categories, track.track_id, pass)}
@@ -274,7 +345,7 @@ export function LabelApp() {
           wasSeen={() => seen.current.has(key)}
           onSeen={() => markSeen(key)}
           prefill={session[key]}
-          busy={busy}
+          busy={busy || running}
           error={error}
           canBack={backTo !== -1}
           onBack={back}
@@ -307,126 +378,312 @@ export function LabelApp() {
     );
   }
 
+  const header = (
+    <>
+      <HomeLink locked={running} />
+      {/* Under md the tabs take their own row, below Home and the count. */}
+      <nav
+        aria-label="Label mode"
+        className="order-3 flex w-full flex-wrap items-baseline gap-x-5 md:order-none md:w-auto md:flex-nowrap md:gap-x-7"
+      >
+        {MODES.map((m) => (
+          <ModeTab
+            key={m.id}
+            label={m.label}
+            active={m.id === mode}
+            open={openCount(itemsFor(state, m.id), now)}
+            disabled={running}
+            onSelect={() => selectMode(m.id, 0)}
+          />
+        ))}
+      </nav>
+      {items.length > 0 && (
+        <span className="ml-auto font-[family-name:var(--font-mono)] text-sm tabular-nums text-[var(--color-text-tertiary)]">
+          {doneCount} / {items.length}
+        </span>
+      )}
+    </>
+  );
+
   return (
-    <Shell>
-      <div className="mb-14 flex items-baseline gap-8">
-        <nav aria-label="Label mode" className="flex items-baseline gap-8">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-pressed={m.id === mode}
-              onClick={() => {
-                setMode(m.id);
-                setError(null);
-                setNow(Date.now());
-                // A confirm belongs to the queue it was opened on; letting it
-                // follow the switch would aim it at a queue nobody opened it for.
-                setBulk(null);
-              }}
-              className={clsx(
-                "relative py-1 text-sm tracking-tight transition-colors duration-200",
-                FOCUS_RING,
-                m.id === mode
-                  ? "text-[var(--color-text-primary)] after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:bg-[var(--color-accent)]"
-                  : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </nav>
-        {openUnlabeled.length > 0 && (
-          <div className="ml-auto flex items-baseline gap-4">
-            {bulk === null && (
-              <button
-                type="button"
-                onClick={() => setBulk("confirm")}
-                className={`text-sm text-[var(--color-text-tertiary)] underline hover:text-[var(--color-text-secondary)] ${FOCUS_RING}`}
-              >
-                Accept all suggestions
-              </button>
-            )}
-            {bulk === "confirm" && (
-              <>
-                <span className="text-sm text-[var(--color-text-secondary)]">
-                  Save the model&apos;s answer for the{" "}
-                  {openUnlabeled.length} remaining?
-                </span>
-                <Button
-                  variant="ghost"
-                  onClick={acceptAll}
-                  className={FOCUS_RING}
-                >
-                  Accept all
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setBulk(null)}
-                  className={`text-sm underline text-[var(--color-text-tertiary)] ${FOCUS_RING}`}
-                >
-                  Cancel
-                </button>
-              </>
-            )}
-            {typeof bulk === "object" && bulk !== null && (
-              <span
-                aria-live="polite"
-                className="font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-secondary)]"
-              >
-                {bulk.done} / {bulk.total}
-              </span>
-            )}
-          </div>
-        )}
-        {items.length > 0 && (
-          <span
-            className={clsx(
-              "font-[family-name:var(--font-mono)] text-sm text-[var(--color-text-tertiary)]",
-              items.some((i) => !i.done) ? "" : "ml-auto",
-            )}
-          >
-            {doneCount} / {items.length}
-          </span>
-        )}
-      </div>
+    <Shell
+      header={header}
+      below={
+        (openUnlabeled > 0 || running || bulkResult !== null) && (
+          <BulkRow
+            bulk={bulk}
+            remaining={openUnlabeled}
+            result={bulkResult}
+            stopping={stopping}
+            onAsk={() => {
+              setBulkResult(null);
+              setBulk("confirm");
+            }}
+            onCancel={() => setBulk(null)}
+            onAccept={acceptAll}
+            onStop={stop}
+          />
+        )
+      }
+    >
       {body}
     </Shell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+// The song holds still beside a long category list from lg up.
+const RAIL_GRID =
+  "grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-x-16";
+const RAIL = "lg:sticky lg:top-12";
+
+function Shell({
+  header,
+  below,
+  children,
+}: {
+  header: React.ReactNode;
+  below?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <PageShell>
       <h1 className="sr-only">Blind labels</h1>
+      <div className="mb-12 md:mb-16">
+        {/* gap-y: under md, Home's 44px tap target clears the tabs' row. */}
+        <header className="flex flex-wrap items-baseline gap-x-8 gap-y-1.5 md:flex-nowrap">
+          {header}
+        </header>
+        {below}
+      </div>
       {children}
     </PageShell>
   );
 }
 
+// The page's only way out (the site nav is hidden here). Inert while a bulk
+// run writes, so leaving can't strand it out of sight.
+function HomeLink({ locked }: { locked: boolean }) {
+  const className = buttonClass({
+    variant: "ghost",
+    size: "sm",
+    // Wider than a tab gap, so it never reads as a fifth queue. The ::before
+    // makes a 44px tap target without growing the row.
+    className:
+      "-ml-1 md:mr-8 before:absolute before:inset-x-0 before:-inset-y-1.5",
+  });
+  const content = (
+    <>
+      <span aria-hidden>←</span>Home
+    </>
+  );
+  if (locked)
+    return (
+      <span
+        role="link"
+        aria-disabled="true"
+        className={`${className} pointer-events-none opacity-50`}
+      >
+        {content}
+      </span>
+    );
+  return (
+    <Link href="/" className={className}>
+      {content}
+    </Link>
+  );
+}
+
+function ModeTab({
+  label,
+  active,
+  open,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  active: boolean;
+  open: number;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  const { spring } = useMotionConfig();
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onSelect}
+      className={clsx(
+        "relative inline-flex min-h-11 items-center whitespace-nowrap text-sm tracking-tight transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50",
+        active
+          ? "text-[var(--color-text-primary)]"
+          : open > 0
+            ? "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
+      )}
+    >
+      {label}
+      {/* Open work on another queue; the tab's name stays exactly its label. */}
+      {!active && open > 0 && (
+        <span
+          aria-hidden="true"
+          className="ml-1.5 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--color-text-tertiary)]"
+        >
+          {open}
+        </span>
+      )}
+      {active && (
+        <motion.span
+          layoutId="label-mode-underline"
+          transition={spring}
+          className="absolute inset-x-0 bottom-2 h-px bg-[var(--color-text-primary)]"
+        />
+      )}
+    </button>
+  );
+}
+
+function BulkRow({
+  bulk,
+  remaining,
+  result,
+  stopping,
+  onAsk,
+  onCancel,
+  onAccept,
+  onStop,
+}: {
+  bulk: Bulk;
+  remaining: number;
+  result: BulkResult | null;
+  stopping: boolean;
+  onAsk: () => void;
+  onCancel: () => void;
+  onAccept: () => void;
+  onStop: () => void;
+}) {
+  const { fade } = useMotionConfig();
+  const phase = bulk === null ? "idle" : bulk === "confirm" ? "confirm" : "run";
+  const run = typeof bulk === "object" ? bulk : null;
+  const askRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const stopRef = useRef<HTMLButtonElement>(null);
+  // Each phase unmounts the control that had focus. Hand it to the new
+  // phase's harmless control (never Accept all), but only if it was lost with
+  // the old one: a tab click that closes the confirm keeps it on the tab.
+  const focusedPhase = useRef(phase);
+  useEffect(() => {
+    if (focusedPhase.current === phase) return;
+    focusedPhase.current = phase;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const target = { idle: askRef, confirm: cancelRef, run: stopRef }[phase];
+    target.current?.focus();
+  }, [phase]);
+
+  const status = run
+    ? `Saving ${run.done} of ${run.total}`
+    : result
+      ? `Saved ${result.saved} of ${result.total}.`
+      : "";
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-6 text-sm md:justify-end">
+      {/* One live region across phases, so the outcome is announced too. */}
+      <p
+        role="status"
+        className="py-1.5 tabular-nums text-[var(--color-text-secondary)] empty:sr-only"
+      >
+        {status}
+      </p>
+      <motion.div
+        key={phase}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={fade}
+        className={clsx(
+          "flex flex-wrap items-baseline gap-x-6 empty:hidden",
+          phase === "confirm" && "w-full md:justify-end",
+        )}
+      >
+        {phase === "idle" && remaining > 0 && (
+          <Button
+            ref={askRef}
+            variant="ghost"
+            size="sm"
+            className="-ml-1"
+            onClick={onAsk}
+          >
+            Accept all suggestions
+          </Button>
+        )}
+        {phase === "confirm" && (
+          <>
+            {/* Its own row at every width: inline, Accept all landed under
+                the pointer that opened it, and a double-click wrote them all. */}
+            <p className="w-full py-1.5 text-[var(--color-text-secondary)] md:text-right">
+              Save the model&apos;s answer for the {remaining} remaining?
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-1"
+              onClick={onAccept}
+            >
+              Accept all
+            </Button>
+            <Button
+              ref={cancelRef}
+              variant="ghost"
+              size="sm"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+          </>
+        )}
+        {run && (
+          <Button
+            ref={stopRef}
+            variant="ghost"
+            size="sm"
+            disabled={stopping}
+            onClick={onStop}
+          >
+            Stop
+          </Button>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// Entry only, keyed per item and never wrapped in AnimatePresence. Under 300ms
+// on purpose: elapsed_ms is timed from the labeler's mount.
 function Item({
   itemKey,
+  dir,
+  className,
   children,
 }: {
   itemKey: string;
+  dir: Direction;
+  className?: string;
   children: React.ReactNode;
 }) {
-  const motionConfig = useMotionConfig();
+  const { reduced } = useMotionConfig();
   return (
     <motion.div
       key={itemKey}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={motionConfig.reduced ? { duration: 0 } : { duration: 0.25 }}
-      className="space-y-12"
+      initial={{ opacity: 0, x: reduced ? 0 : dir * 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={
+        reduced ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT_EXPO }
+      }
+      className={className}
     >
       {children}
     </motion.div>
   );
-}
-
-function QuietLine({ children }: { children: React.ReactNode }) {
-  return <p className="text-[var(--color-text-secondary)]">{children}</p>;
 }
 
 function emptyLine(state: LabelState, mode: Mode): string {

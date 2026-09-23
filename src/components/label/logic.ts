@@ -32,6 +32,12 @@ export function isOpen(item: Item, now: number): boolean {
   return item.opens_at !== null && Date.parse(item.opens_at) <= now;
 }
 
+// Unlabeled is not the same as actionable: relabel items are time-locked one
+// by one. This is the work a queue can take right now.
+export function openCount(items: readonly Item[], now: number): number {
+  return items.filter((i) => !i.done && isOpen(i, now)).length;
+}
+
 // Next unlabeled, open item after `from` in list order, wrapping so items
 // skipped via Back are still reached. -1 when none is left.
 export function nextIndex(

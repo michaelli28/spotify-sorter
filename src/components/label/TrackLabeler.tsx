@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import clsx from "clsx";
 import { Button } from "@/src/components/design/Button";
 import { Definition } from "./Definition";
+import { ErrorLine } from "./ErrorLine";
 import { FOCUS_RING } from "./focus";
 import type { LabelCategory } from "./logic";
 import type { Suggestion } from "@/src/lib/labeling/schema";
@@ -151,9 +153,15 @@ export function TrackLabeler({
           )}
         </div>
       )}
-      <fieldset>
+      {/* Locked while a save or bulk run is in flight: a tick made then is
+          thrown away when the song moves on. */}
+      <fieldset
+        disabled={busy}
+        className="disabled:pointer-events-none disabled:opacity-50"
+      >
         <legend className="sr-only">Categories</legend>
-        <ul className="grid gap-x-12 gap-y-5 md:grid-cols-2">
+        {/* One column beside the song rail, two where the list has the page. */}
+        <ul className="grid gap-x-12 gap-y-6 md:grid-cols-2 lg:grid-cols-1">
           {categories.map((c) => {
             const nameId = `${uid}-${c.id}-name`;
             const defId = `${uid}-${c.id}-def`;
@@ -194,46 +202,62 @@ export function TrackLabeler({
         </ul>
       </fieldset>
 
-      <div className="sticky bottom-0 mt-12 border-t border-[var(--color-border-default)] bg-[var(--color-bg-base)] py-4">
-        {error && (
-          <p role="alert" className="mb-3 text-sm text-[var(--color-danger)]">
-            {error}
-          </p>
-        )}
+      <div className="sticky bottom-0 mt-12 space-y-2 border-t border-[var(--color-border-default)] bg-[var(--color-bg-base)] pt-3 pb-2">
+        <ErrorLine error={error} />
         {/* No ticks alone would read as "fits none", a different answer. */}
         {prefill?.cant_judge && (
-          <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             Saved as can&apos;t judge.
           </p>
         )}
-        <div className="flex items-baseline gap-8">
-          <Button
-            variant="ghost"
-            onClick={onBack}
-            disabled={!canBack || busy}
-            className={FOCUS_RING}
+        {/* What Save will record, so an empty save is never silent. */}
+        {!(prefill?.cant_judge && ticked.size === 0) && (
+          <p
+            className={clsx(
+              "truncate text-sm",
+              ticked.size === 0
+                ? "text-[var(--color-text-tertiary)]"
+                : "text-[var(--color-text-secondary)]",
+            )}
           >
-            Back
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={onNext}
-            disabled={!canNext || busy}
-            className={FOCUS_RING}
-          >
-            Next
-          </Button>
-          <div className="ml-auto flex items-baseline gap-8">
+            {ticked.size === 0
+              ? "Nothing ticked"
+              : categories
+                  .filter((c) => ticked.has(c.id))
+                  .map((c) => c.name)
+                  .join(", ")}
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-5">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              disabled={!canBack || busy}
+            >
+              Back
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onNext}
+              disabled={!canNext || busy}
+            >
+              Next
+            </Button>
+          </div>
+          <div className="flex items-center gap-6">
             <Button
               variant="ghost"
               disabled={busy}
-              className={FOCUS_RING}
+              className="whitespace-nowrap"
               onClick={() =>
                 onSubmit({
                   category_ids: [],
                   cant_judge: true,
                   elapsed_ms: elapsed(),
-                  assisted: (sawSuggestions.current || wasSeen()),
+                  assisted: sawSuggestions.current || wasSeen(),
                 })
               }
             >
@@ -241,13 +265,12 @@ export function TrackLabeler({
             </Button>
             <Button
               disabled={busy}
-              className={FOCUS_RING}
               onClick={() =>
                 onSubmit({
                   category_ids: [...ticked],
                   cant_judge: false,
                   elapsed_ms: elapsed(),
-                  assisted: (sawSuggestions.current || wasSeen()),
+                  assisted: sawSuggestions.current || wasSeen(),
                 })
               }
             >
