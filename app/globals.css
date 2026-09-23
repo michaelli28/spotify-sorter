@@ -35,6 +35,8 @@
   --rec-face: oklch(0.94 0.018 86);
   --rec-edge: oklch(0.7 0.04 264);
   --scrim: oklch(0.285 0.075 266 / 0.48);
+  /* The shop counter under /setup's card file. */
+  --counter: var(--kraft);
 
   /* Printed objects keep their own stock at night: orange's label, the tabs. */
   --on-accent: oklch(0.285 0.075 266);
@@ -112,10 +114,13 @@
     --rec-face: oklch(0.315 0.07 266);
     --rec-edge: oklch(0.52 0.05 266);
     --scrim: oklch(0.13 0.04 266 / 0.66);
+    /* Night kraft is tuned for the crate's small area; a page of it is mud. */
+    --counter: var(--paper-deep);
 
-    /* The open tab stays reversed and gains a cream keyline. */
-    --tab-pressed: oklch(0.2 0.058 266);
-    --tab-pressed-ink: oklch(0.925 0.024 86);
+    /* The open tab prints in the ink, as by day: cream with a navy number.
+       In paper-deep it matched its own divider card (1.0:1) and read as a hole. */
+    --tab-pressed: oklch(0.925 0.024 86);
+    --tab-pressed-ink: oklch(0.2 0.058 266);
     --tab-pressed-edge: oklch(0.925 0.024 86);
 
     --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.93  0 0 0 0 0.9  0 0 0 0 0.82  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
@@ -127,26 +132,6 @@
   :root {
     --strip-h: 73px;
   }
-}
-
-/* Legacy aliases: remove after pages migrate. Only unmigrated page code reads
-   these; new code uses the utilities below. --color-accent was the old marker
-   colour (focus, progress, underlines), so it maps to ink, not orange. */
-:root {
-  --color-bg-base: var(--paper);
-  --color-bg-surface: var(--paper-deep);
-  --color-bg-elevated: var(--card);
-  --color-border-default: var(--rule);
-  --color-border-strong: var(--rule-strong);
-  --color-text-primary: var(--ink);
-  --color-text-secondary: var(--ink-2);
-  --color-text-tertiary: var(--ink-3);
-  --color-accent: var(--ink);
-  --color-accent-strong: var(--ink);
-  --color-accent-soft: var(--rule-strong);
-  --color-success: var(--success);
-  --color-danger: var(--danger);
-  --color-warning: var(--warn-ink);
 }
 
 /* Colour utilities: bg-paper, text-ink-2, border-rule, bg-t-haze, … Inline, so
@@ -173,6 +158,7 @@
   --color-rec-face: var(--rec-face);
   --color-rec-edge: var(--rec-edge);
   --color-scrim: var(--scrim);
+  --color-counter: var(--counter);
   --color-tab-stock: var(--tab-stock);
   --color-tab-ink: var(--tab-ink);
   --color-tab-pressed: var(--tab-pressed);
@@ -234,8 +220,6 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  /* Legacy alias: remove after pages migrate. */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @layer base {

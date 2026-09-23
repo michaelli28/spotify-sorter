@@ -23,7 +23,8 @@ export interface PressListProps {
   rows: readonly PressRow[];
   /** The bar scale's full length. Default: the largest count (1,442 on the real library). A count of 0 draws no bar. */
   max?: number;
-  /** Ids already on Spotify. A row is marked only while some, not all, are (a mark must differ). */
+  /** Ids already on Spotify. A row is marked only while some, not all, are (a mark must differ).
+   *  A Set crosses from a server component. */
   onSpotify?: ReadonlySet<string>;
   /** Rows shown on phones (≤720px) before "Show all N". */
   phoneLimit?: number;
@@ -85,28 +86,43 @@ export function PressList({
               </span>
               <span className="font-semibold tabular-nums">
                 {row.count.toLocaleString("en-US")}
-                {marks && onSpotify?.has(row.id) && (
-                  <span className="ml-2 font-[family-name:var(--font-mono)] text-[0.8rem] font-normal text-[var(--success)]">
-                    on Spotify
-                  </span>
-                )}
               </span>
-              {row.count > 0 && (
-                <motion.span
-                  data-bar
-                  aria-hidden="true"
-                  className="col-[2/4] block h-1.5 origin-left bg-[var(--ink)]"
-                  initial={{ scaleX: 0 }}
-                  // A floor keeps the smallest real count visible; a count past `max` stops at full length.
-                  animate={{
-                    scaleX: Math.min(Math.max(row.count / scale, 0.006), 1),
-                  }}
-                  transition={{
-                    duration: 0.48,
-                    ease: EASE_OUT,
-                    delay: Math.min(k, 14) * 0.012 + 0.12,
-                  }}
-                />
+              {(row.count > 0 || marks) && (
+                // While marks show, every row reserves the mark's slot after
+                // its bar, so all bars keep the same room and scale.
+                <span
+                  className={clsx(
+                    "col-[2/4] grid items-center gap-x-3",
+                    marks && "grid-cols-[minmax(0,1fr)_10.5ch]",
+                  )}
+                >
+                  {row.count > 0 ? (
+                    <motion.span
+                      data-bar
+                      aria-hidden="true"
+                      className="block h-1.5 origin-left bg-[var(--ink)]"
+                      initial={{ scaleX: 0 }}
+                      // A floor keeps the smallest real count visible; a count past `max` stops at full length.
+                      animate={{
+                        scaleX: Math.min(Math.max(row.count / scale, 0.006), 1),
+                      }}
+                      transition={{
+                        duration: 0.48,
+                        ease: EASE_OUT,
+                        delay: Math.min(k, 14) * 0.012 + 0.12,
+                      }}
+                    />
+                  ) : (
+                    <span />
+                  )}
+                  {marks && (
+                    // Negative margins: the mark sits on the bar's line without
+                    // making a marked row taller than its neighbours.
+                    <span className="mono -my-1.5 text-right leading-none whitespace-nowrap text-success">
+                      {onSpotify?.has(row.id) ? "on Spotify" : null}
+                    </span>
+                  )}
+                </span>
               )}
               {renderTrailing && (
                 <span className="col-[2/4] min-w-0">

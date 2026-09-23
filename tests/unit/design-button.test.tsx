@@ -132,6 +132,50 @@ describe("Button", () => {
   it("gives sm and md different recipes", () => {
     expect(buttonClass({ size: "sm" })).not.toBe(buttonClass({ size: "md" }));
   });
+
+  // "Checking…" on a faded primary measured ~2:1, and that label is the only
+  // visible sign work is running: busy locks the button without the fade.
+  it("locks a busy button without fading its label", () => {
+    render(
+      <>
+        <Button busy>Checking…</Button>
+        <Button disabled>Off</Button>
+      </>,
+    );
+    const busy = screen.getByRole("button", { name: "Checking…" });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Off" })).not.toHaveAttribute(
+      "aria-busy",
+    );
+    const primary = buttonClass({ variant: "primary" }).split(/\s+/);
+    expect(primary).toContain("not-aria-busy:disabled:opacity-50");
+    expect(primary).not.toContain("disabled:opacity-50");
+  });
+
+  // A locked Back beside a faded Save read as live: every variant fades.
+  it.each(["quiet", "ghost", "danger"] as const)(
+    "fades a disabled %s button like the printed ones, and gives it a 44px target",
+    (variant) => {
+      const classes = buttonClass({ variant }).split(/\s+/);
+      expect(classes).toContain("not-aria-busy:disabled:opacity-50");
+      expect(classes).toContain("min-h-11");
+      expect(classes).toContain("min-w-11");
+    },
+  );
+
+  // /label prints in navy only; it used to borrow danger-confirm's recipe.
+  it("has an ink variant: a printed button in navy, keyline snapping into register", () => {
+    render(<Button variant="ink">Save</Button>);
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toHaveAttribute("data-variant", "ink");
+    const classes = save.className.split(/\s+/);
+    expect(classes).toContain("after:translate-1");
+    expect(classes).toContain("after:border-ink");
+    expect(classes).toContain("after:transition-none");
+    expect(classes).toContain("text-ink");
+    expect(classes.some((c) => c.includes("danger"))).toBe(false);
+  });
 });
 
 describe("ButtonLink", () => {

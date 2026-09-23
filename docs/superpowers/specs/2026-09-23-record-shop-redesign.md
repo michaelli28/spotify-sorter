@@ -171,3 +171,10 @@ stocks through the read-only harness (externals faked), then commits per unit an
    strip's placeholder and nothing jumps); page elements stay below z-30.
 5. `<SleeveDefs />` is mounted once in `app/layout.tsx`; `@property --u` is registered in
    `app/globals.css`.
+6. **Night pressed tab (integration).** At night `--tab-pressed` is the stock's ink (cream) with a
+   paper-deep number, as by day it is navy with a paper number. In paper-deep it matched its own
+   crate divider card (1.0:1) and read as a hole; /setup had already worked around it.
+7. **Blind filter covers the gold set.** `blindTrackIds()` also drops `gold-sample.json`'s ids:
+   the gold set is labelled blind on /label, so it must never appear beside a category.
+8. **Top strip `end={null}`** is allowed when a label would be a guess (diff's first load) or
+   nothing can be pressed (classify while it runs). The strip keeps its height.

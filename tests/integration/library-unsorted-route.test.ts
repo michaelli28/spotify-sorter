@@ -129,6 +129,27 @@ describe("GET /api/library/unsorted", () => {
     expect(body.tracks.map((t: { id: string }) => t.id)).toEqual(["t2", "t4"]);
   });
 
+  // The cache lists oldest scan first. Past `limit` waiting tracks, older
+  // leftovers pushed the latest scan's tracks out of /diff's slip.
+  it("lists the latest scan first, in Spotify's order inside each scan", async () => {
+    const cache = cacheWith(5);
+    const at = (iso: string) => ({ artist_id: "a1", first_seen: iso });
+    const OLD = "2026-08-01T00:00:00.000Z";
+    const NEW = "2026-09-20T00:00:00.000Z";
+    Object.assign(cache.tracks, {
+      t1: { ...at(OLD), title: "Song 1" },
+      t2: { ...at(OLD), title: "Song 2" },
+      t3: { ...at(OLD), title: "Song 3" },
+      t4: { ...at(NEW), title: "Song 4" },
+      t5: { ...at(NEW), title: "Song 5" },
+    });
+    await seed(cache);
+    const ids = async (q: string) =>
+      (await (await get(q)).json()).tracks.map((t: { id: string }) => t.id);
+    expect(await ids("")).toEqual(["t4", "t5", "t1", "t2", "t3"]);
+    expect(await ids("?limit=2")).toEqual(["t4", "t5"]);
+  });
+
   it("never writes: the cache file is byte-for-byte untouched", async () => {
     await seed({ ...cacheWith(2), extra_field: "kept" });
     const path = join(dir, "cache.json");

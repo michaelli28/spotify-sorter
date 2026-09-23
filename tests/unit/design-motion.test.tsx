@@ -11,11 +11,7 @@ vi.mock("framer-motion", async (importOriginal) => ({
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
 
-import {
-  EASE_OUT_EXPO,
-  SPRING,
-  useMotionConfig,
-} from "@/src/hooks/useMotionConfig";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import {
   EASE_OUT,
   SPRING_SETTLE,
@@ -30,10 +26,8 @@ afterEach(() => {
 });
 
 describe("useMotionConfig", () => {
-  // One source of truth: the legacy names are the brief §4.4 tokens.
+  // One source of truth: the hook's values are the brief §4.4 tokens.
   it("takes its spring, ease and stagger from the motion tokens", () => {
-    expect(SPRING).toBe(SPRING_SETTLE);
-    expect(EASE_OUT_EXPO).toBe(EASE_OUT);
     const { result } = renderHook(() => useMotionConfig());
     expect(result.current.spring).toEqual(SPRING_SETTLE);
     expect(result.current.pageEase).toEqual({ duration: 0.6, ease: EASE_OUT });

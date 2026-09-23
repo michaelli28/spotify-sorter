@@ -2,7 +2,8 @@
 import { MotionConfig, motion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { SPRING, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { SPRING_SETTLE } from "@/src/components/design/motion";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
 // Fade-in only, never AnimatePresence: an exit rendered the next page inside
 // the outgoing wrapper, so pages mounted twice and the scan stream ran twice.
@@ -13,7 +14,7 @@ export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { pageEase } = useMotionConfig();
   return (
-    <MotionConfig reducedMotion="user" transition={SPRING}>
+    <MotionConfig reducedMotion="user" transition={SPRING_SETTLE}>
       <motion.div
         key={pathname}
         initial={{ opacity: 0 }}

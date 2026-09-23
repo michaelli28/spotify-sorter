@@ -11,8 +11,9 @@ export const dynamic = "force-dynamic";
 const LimitSchema = z.coerce.number().int().min(1).max(200);
 
 // Read-only (readCache, never withSpotify): the diff page's list of tracks
-// waiting to be sorted. `total` counts every unsorted track; the list drops
-// the labelling sample's songs, so it can be shorter than `total` implies.
+// waiting to be sorted, newest scan first. `total` counts every unsorted
+// track; the list drops the labelling sample's songs, so it can be shorter
+// than `total` implies.
 export async function GET(req: Request) {
   const raw = new URL(req.url).searchParams.get("limit");
   const limit =
@@ -34,7 +35,12 @@ export async function GET(req: Request) {
     throw err;
   }
   const unsorted = unsortedTrackIds(cache);
-  const shown = (await filterBlind(unsorted)).slice(0, limit.data);
+  // One scan stamps all its tracks at once, so the stable sort keeps Spotify's
+  // order inside a scan. Sorted before the cut: past `limit`, older leftovers
+  // must not push the latest scan out.
+  const seen = (id: string) => Date.parse(cache.tracks[id]!.first_seen);
+  const newestFirst = [...unsorted].sort((a, b) => seen(b) - seen(a));
+  const shown = (await filterBlind(newestFirst)).slice(0, limit.data);
   return NextResponse.json({
     total: unsorted.length,
     tracks: shown.map((id) => {

@@ -16,8 +16,14 @@ export function PageShell({ children, eyebrow, title, back }: PageShellProps) {
     <main className="page-frame pt-8 pb-section">
       {back && (
         <ButtonLink href={back.href} variant="ghost" size="sm" className="mb-4">
-          <span aria-hidden>←</span>
-          {back.label}
+          {/* One child: the recipe's flex gap would split the underline in
+              two. An underline doesn't reach into the inline-block arrow. */}
+          <span>
+            <span aria-hidden className="mr-1.5 inline-block">
+              ←
+            </span>
+            {back.label}
+          </span>
         </ButtonLink>
       )}
       {(eyebrow || title) && (

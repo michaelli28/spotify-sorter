@@ -56,6 +56,35 @@ describe("<Tab>", () => {
     expect(tab.className).toContain("text-[var(--ink-2)]");
     expect(tab.className).not.toContain("text-[var(--tab-ink)]");
   });
+
+  // /review's proposing bin: a catalogue number belongs to a real category.
+  it("prints an unnumbered blank tab", () => {
+    render(
+      <Tab
+        catalogueNo={null}
+        temperature={null}
+        size="review"
+        data-testid="t"
+      />,
+    );
+    const tab = screen.getByTestId("t");
+    expect(tab).toBeEmptyDOMElement();
+    expect(tab.className).toContain("border-dashed");
+    expect(tab.className).toContain("min-w-10");
+  });
+
+  // Classify's crate prints a number and a live count in one tab.
+  it("prints its children in place of the number", () => {
+    render(
+      <Tab catalogueNo={7} temperature="haze" size="crate" data-testid="t">
+        <span>07</span>
+        <span>1,442</span>
+      </Tab>,
+    );
+    const tab = screen.getByTestId("t");
+    expect(tab).toHaveTextContent(/^071,442$/);
+    expect(fill(tab)).toBe(tabTint("haze"));
+  });
 });
 
 describe("<TemperatureKey>", () => {

@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // The tokens live in CSS, which jsdom can't lay out, so these read the file.
@@ -127,11 +127,43 @@ describe("globals.css tokens", () => {
     expect(value(day, "--space-md")).toBe("24px");
   });
 
-  it("marks every legacy alias for removal", () => {
-    const legacy = css.match(/--color-(bg|text|border)-[a-z-]+\s*:/g) ?? [];
-    expect(legacy.length).toBeGreaterThan(0);
-    const aliases = block(/\/\* Legacy aliases: remove after pages migrate/);
-    for (const decl of legacy) expect(aliases).toContain(decl);
+  // Every page migrated, so the pre-redesign aliases are gone, and nothing
+  // may read one again: an unset var() prints nothing, silently.
+  it("has no legacy alias left, and no source reads one", () => {
+    const LEGACY =
+      /--color-(?:bg|text|border)-|--color-accent-(?:strong|soft)\b|var\(--color-(?:accent|success|danger|warning)\)|--ease-out-expo|ease-out-expo\b/;
+    expect(css).not.toMatch(LEGACY);
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const path = join(dir, name);
+        return statSync(path).isDirectory()
+          ? files(path)
+          : /\.(tsx?|css)$/.test(name)
+            ? [path]
+            : [];
+      });
+    const readers = ["app", "src"]
+      .flatMap((d) => files(join(process.cwd(), d)))
+      .filter((f) => LEGACY.test(readFileSync(f, "utf8")))
+      .map((f) => relative(process.cwd(), f));
+    expect(readers).toEqual([]);
+  });
+
+  // /setup's ground. A whole page of night kraft is mud, so the evening
+  // counter is the stock's well.
+  it("sets the counter in kraft by day and the well at night", () => {
+    expect(value(day, "--counter")).toBe("var(--kraft)");
+    expect(value(night, "--counter")).toBe("var(--paper-deep)");
+    expect(value(css, "--color-counter")).toBe("var(--counter)");
+  });
+
+  // The open tab prints in the ink on both stocks. At night paper-deep was
+  // its own divider card's fill (1.0:1): it read as a hole in the crate.
+  it("prints the open tab in the stock's ink, its number in the deep navy", () => {
+    expect(value(day, "--tab-pressed")).toBe(value(day, "--ink"));
+    expect(value(night, "--tab-pressed")).toBe(value(night, "--ink"));
+    expect(value(night, "--tab-pressed")).not.toBe(value(night, "--paper-deep"));
+    expect(value(night, "--tab-pressed-ink")).toBe(value(night, "--paper-deep"));
   });
 
   // Brief §5: 93px desktop, 73px phone whatever the strip holds, so one

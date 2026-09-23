@@ -4,7 +4,7 @@ import { Field, Input } from "@/src/components/design/Input";
 import { Card, surfaceClass } from "@/src/components/design/Card";
 import { TrackRow } from "@/src/components/design/TrackRow";
 import { PageShell } from "@/src/components/design/PageShell";
-import { ProgressBar } from "@/src/components/scan/ProgressBar";
+import { ProgressBand } from "@/src/components/design/ProgressBand";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
 
 afterEach(() => {
@@ -57,6 +57,12 @@ describe("Input", () => {
     expect(screen.getByLabelText("Client ID")).toHaveAccessibleDescription(
       "32 characters Too short.",
     );
+  });
+
+  // Brief §5: every control a 44px target. The underline input measured 42.
+  it("gives the underline input a 44px target", () => {
+    render(<Input label="Filter" />);
+    expect(screen.getByLabelText("Filter")).toHaveClass("min-h-11");
   });
 });
 
@@ -157,6 +163,40 @@ describe("TrackRow", () => {
     );
     expect(screen.getByRole("button", { name: "Move" })).toBeInTheDocument();
   });
+
+  // The title line is 22px; brief §5 asks 44. The link's ::after spans the
+  // positioned row, so the whole row is the target, and a trailing control
+  // sits above that overlay so it stays clickable.
+  it("makes the whole row the link's target, trailing control above it", () => {
+    render(
+      <ul>
+        <TrackRow
+          title="Nights"
+          artist="Frank Ocean"
+          href="spotify:track:1"
+          trailing={<button type="button">Move</button>}
+        />
+      </ul>,
+    );
+    expect(screen.getByRole("listitem")).toHaveClass("relative");
+    expect(screen.getByRole("link", { name: "Nights" })).toHaveClass(
+      "after:absolute",
+      "after:inset-0",
+    );
+    expect(screen.getByRole("button", { name: "Move" }).parentElement).toHaveClass(
+      "relative",
+      "z-[1]",
+    );
+  });
+
+  it("stays a plain row without an href", () => {
+    render(
+      <ul>
+        <TrackRow title="Nights" artist="Frank Ocean" />
+      </ul>,
+    );
+    expect(screen.getByRole("listitem")).not.toHaveClass("relative");
+  });
 });
 
 describe("PageShell", () => {
@@ -179,6 +219,22 @@ describe("PageShell", () => {
     );
   });
 
+  // The ghost recipe is inline-flex with a gap: each flex child took its own
+  // underline and the gap broke it, so arrow and label read as two links. One
+  // child, the arrow an inline-block (an underline doesn't reach into one).
+  it("underlines the back link in one piece", () => {
+    render(
+      <PageShell title="Apply failed." back={{ href: "/", label: "Home" }}>
+        body
+      </PageShell>,
+    );
+    const link = screen.getByRole("link", { name: "Home" });
+    expect(link.children).toHaveLength(1);
+    const arrow = link.querySelector("[aria-hidden]");
+    expect(arrow).toHaveTextContent("←");
+    expect(arrow).toHaveClass("inline-block");
+  });
+
   // SiteNav sits above <main>; a full-viewport main made every short page
   // scroll by the nav's height.
   it("leaves the page's height to its content", () => {
@@ -193,17 +249,18 @@ describe("PageShell", () => {
   });
 });
 
-describe("ProgressBar", () => {
+// The strip's ink band while a run writes (classify, apply): one component.
+describe("ProgressBand", () => {
   it("reports its value to assistive tech", () => {
-    render(<ProgressBar value={3} total={12} label="Scan progress" />);
-    const bar = screen.getByRole("progressbar", { name: "Scan progress" });
+    render(<ProgressBand value={3} total={12} label="Playlists written" />);
+    const bar = screen.getByRole("progressbar", { name: "Playlists written" });
     expect(bar).toHaveAttribute("aria-valuemin", "0");
     expect(bar).toHaveAttribute("aria-valuemax", "12");
     expect(bar).toHaveAttribute("aria-valuenow", "3");
   });
 
   it("never reports more than the total", () => {
-    render(<ProgressBar value={15} total={12} />);
+    render(<ProgressBand value={15} total={12} label="Sorting" />);
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
       "12",
@@ -211,10 +268,15 @@ describe("ProgressBar", () => {
   });
 
   it("is indeterminate while the total is unknown", () => {
-    render(<ProgressBar value={0} total={0} />);
-    expect(screen.getByRole("progressbar")).not.toHaveAttribute(
-      "aria-valuenow",
-    );
+    render(<ProgressBand value={0} total={0} label="Sorting" />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(bar).not.toHaveAttribute("aria-valuemax");
+  });
+
+  it("takes its width from the caller", () => {
+    render(<ProgressBand value={1} total={2} label="Sorting" className="w-28" />);
+    expect(screen.getByRole("progressbar")).toHaveClass("w-28");
   });
 });
 

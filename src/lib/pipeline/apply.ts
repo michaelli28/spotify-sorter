@@ -24,6 +24,8 @@ export interface ApplyResult {
   tracks_added: number;
   playlists: Array<{
     id: string;
+    /** The category it was written for: its name can change in another tab. */
+    category_id: string;
     name: string;
     track_count: number;
     created: boolean;
@@ -100,6 +102,7 @@ export async function runApplyFromCache(opts: {
     }
     playlists.push({
       id: playlistId!,
+      category_id: categoryId,
       name: fullName,
       track_count: trackIds.length,
       created: wasCreated,

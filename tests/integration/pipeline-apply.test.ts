@@ -99,6 +99,7 @@ describe("runApplyFromCache", () => {
     expect(result.tracks_added).toBe(1);
     expect(result.playlists[0]).toMatchObject({
       id: "p_new",
+      category_id: "cat-1",
       created: true,
       track_count: 1,
     });

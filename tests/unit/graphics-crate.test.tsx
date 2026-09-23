@@ -49,6 +49,19 @@ describe("<CrateFigure>", () => {
     // Tailwind's @container: container-type inline-size, so 100cqw is the figure's width.
     expect(bin.parentElement).toHaveClass("@container");
   });
+
+  // Its sleeve (z 60) and slats (z 70) must stay inside the figure: they beat
+  // the z-30 top strip and a dialog's z-50 on the page (spec §7.4).
+  it("keeps its layers to itself", () => {
+    render(
+      <CrateFigure role="group" aria-label="Crate">
+        x
+      </CrateFigure>,
+    );
+    expect(
+      screen.getByRole("group", { name: "Crate" }).parentElement,
+    ).toHaveClass("isolate");
+  });
 });
 
 describe("<CrateLayer> and <CrateBack>", () => {

@@ -105,7 +105,7 @@ The same hue (navy 266) at three lightness steps, so depth comes from surface li
 | `--accent` / `--accent-press`           | `0.735 0.155 52` / `0.690 0.160 48`                     | #f48a41 / #e87835           | orange, a touch less chroma                           |
 | `--danger` / `--success` / `--warn-ink` | `0.745 0.135 24` / `0.790 0.085 192` / `0.860 0.110 88` | #f68882 / #75ccc8 / #efcd79 | lifted for a dark ground                              |
 | `--kraft` / `--hollow`                  | `0.500 0.055 66` / `0.175 0.030 62`                     | #795d41 / #1a0d03           | the crate under a lamp                                |
-| `--tab-pressed` / `-edge`               | paper-deep / cream                                      | —                           | the open tab stays reversed and gains a cream keyline |
+| `--tab-pressed` / `-ink`                | cream / paper-deep                                      | —                           | the open tab prints in the ink, as by day (spec §7.6) |
 | `--scrim`                               | `oklch(0.130 0.040 266 / 0.66)`                         | —                           | behind the price tag                                  |
 
 Unchanged on purpose: `--on-accent` (navy), the tab tints, and the sleeves' own card-coloured paper. On the navy page, sleeves and tabs read as physical objects laid on a dark counter.
@@ -133,7 +133,7 @@ Unchanged on purpose: `--on-accent` (navy), the tab tints, and the sleeves' own 
 | ink on kraft                          | 8.97         | 4.5            | the key stencilled on the crate's slat |
 | rule-strong on card / on paper        | 3.71 / 3.50  | 3.0 (non-text) | keylines, chart bars, underlines       |
 
-**Evening stock:** ink on paper 13.46, ink-2 on paper 9.46, ink-3 on paper 7.14, ink on card 12.00, ink-2 on card 8.43, ink-3 on card 6.37, ink on tint 9.35, ink-2 on tint 6.57, danger on card 6.24, success on paper 9.00, warn-ink on paper 10.95, ink on kraft 4.87 (the key), on-accent on accent 5.88 (pressed 4.94), open tab (cream on paper-deep) 14.58, rule-strong on card 3.78 (non-text).
+**Evening stock:** ink on paper 13.46, ink-2 on paper 9.46, ink-3 on paper 7.14, ink on card 12.00, ink-2 on card 8.43, ink-3 on card 6.37, ink on tint 9.35, ink-2 on tint 6.57, danger on card 6.24, success on paper 9.00, warn-ink on paper 10.95, ink on kraft 4.87 (the key), on-accent on accent 5.88 (pressed 4.94), open tab (paper-deep on cream) 14.58, rule-strong on card 3.78 (non-text).
 
 **Divider tabs (navy number on the tint, both stocks):** dusk 8.40, charge 8.88, glow 12.67, haze 10.70.
 

@@ -26,8 +26,8 @@ export function ThinkingIndicator({
   // are the only sign of work (the brief bans endless loaders).
   return (
     <div className="max-w-xl space-y-2">
-      <p className="text-[var(--color-text-secondary)]">{message}</p>
-      <p className="text-xs font-[family-name:var(--font-mono)] tabular-nums text-[var(--color-text-tertiary)]">
+      <p className="text-ink-2">{message}</p>
+      <p className="mono num text-ink-3">
         {formatElapsed(elapsed)} elapsed
         {hasTokens && ` · ${outputTokens!.toLocaleString()} tokens generated`}
         {estimateSeconds && !overtime && ` · ~${estimateSeconds}s expected`}

@@ -127,6 +127,30 @@ describe("blindTrackIds", () => {
     await put("sample.json", JSON.stringify({ seed: "s" }));
     await expect(blindTrackIds()).rejects.toThrow();
   });
+
+  // The gold set is labelled blind on /label too (isLabelStudyOpen counts it),
+  // so a gold song under its category on home would show the model's answer.
+  it("also hides the gold set's songs", async () => {
+    await put("sample.json", JSON.stringify(sample));
+    await put(
+      "gold-sample.json",
+      JSON.stringify({
+        seed: "g",
+        created_at: ISO,
+        pool: { no_genre: 2, already_sampled: 0, eligible: 2 },
+        track_ids: ["g1", "g2"],
+      }),
+    );
+    const blind = await blindTrackIds();
+    expect([...blind.ids].sort()).toEqual(["g1", "g2", "q1", "r1", "r2"]);
+    expect(await filterBlind(["x1", "g1", "x2", "g2"])).toEqual(["x1", "x2"]);
+  });
+
+  it("throws on a malformed gold sample rather than hiding nothing", async () => {
+    await put("sample.json", JSON.stringify(sample));
+    await put("gold-sample.json", JSON.stringify({ seed: "g" }));
+    await expect(blindTrackIds()).rejects.toThrow();
+  });
 });
 
 describe("filterBlind", () => {

@@ -70,7 +70,7 @@ Read-only (`readCache` only). `limit` is an integer 1–200, default 50; anythin
 { "total": 297, "tracks": [{ "id": "…", "title": "…", "artist": "…" }] }
 ```
 
-`total` counts every unsorted track (no assignment, the `unsortedTrackIds` rule). `tracks` is blind-filtered, then cut to `limit`, in cache order. The list can hold fewer than `total`.
+`total` counts every unsorted track (no assignment, the `unsortedTrackIds` rule). `tracks` is sorted newest scan first (by `first_seen`; Spotify's order inside a scan), blind-filtered, then cut to `limit`, so older leftovers never push the latest scan out. The list can hold fewer than `total`.
 
 ### `POST /api/spotify/cover`
 
@@ -116,8 +116,8 @@ review page's real save path still drops it (see **For the page agents**).
 | `src/lib/sleeves/temperature` | `TEMPERATURES`, `Temperature`                                 | the one `as const` list; schema and sleeves derive from it                                                                                                                                                                                                               |
 | `src/lib/cache/schema`        | `CategorySchema.temperature`                                  | `z.enum(TEMPERATURES).optional()`, no version bump                                                                                                                                                                                                                       |
 | `src/lib/categories/merge`    | `DraftCategory.temperature?`                                  | carried by rename and merge (merge keeps the target's)                                                                                                                                                                                                                   |
-| `src/lib/labeling/blind`      | `blindTrackIds()`                                             | `{ids, sample: "present" \| "missing"}` from `sample.json` (random, relabel, pairs[].track_id); missing = empty set; malformed = throws                                                                                                                                  |
-|                               | `filterBlind(ids)`                                            | `ids` minus the sample, order kept                                                                                                                                                                                                                                       |
+| `src/lib/labeling/blind`      | `blindTrackIds()`                                             | `{ids, sample: "present" \| "missing"}` from `sample.json` (random, relabel, pairs[].track_id) and `gold-sample.json` (the gold set is labelled blind too); missing = empty set; malformed = throws                                                                                                                                  |
+|                               | `filterBlind(ids)`                                            | `ids` minus the sample and gold set, order kept                                                                                                                                                                                                                                       |
 |                               | `isLabelStudyOpen()`                                          | true while any random, gold, pair or relabel item has no label, from `sample.json`, `gold-sample.json` and `labels.jsonl` only (never definitions or category names, so a rename can't reopen a finished study). No sample = false. A file it can't read or parse = true |
 | `src/lib/artwork/store`       | `readArtwork()`, `recordArtwork(id, url \| null, fetchedAt)`  | missing or corrupt file = empty; writes serialized in-process, re-read inside the queue, tmp + rename                                                                                                                                                                    |
 | `src/lib/artwork/oembed`      | `fetchThumbnail(id)`, `isAllowedArtUrl(url)`, `ArtFetchError` | the 4-slot, 8 s oEmbed fetch and the host allowlist                                                                                                                                                                                                                      |
@@ -125,6 +125,9 @@ review page's real save path still drops it (see **For the page agents**).
 |                               | `MAX_COVER_BASE64_BYTES`                                      | 262,144: import it in the canvas export instead of repeating the number                                                                                                                                                                                                  |
 | `src/lib/spotify/scopes`      | `SPOTIFY_SCOPES`                                              | now includes `ugc-image-upload`                                                                                                                                                                                                                                          |
 | `src/lib/pipeline/scan`       | `runScan` progress                                            | every `playlists` event carries `total = included playlists`. Liked Songs reports only on its own `liked` stage, as before                                                                                                                                               |
+
+`runApplyFromCache`'s result names each playlist's `category_id`, so the credits match rows by
+id: a rename in another tab between page load and Apply changes the name, never the id.
 
 ## For the page agents
 

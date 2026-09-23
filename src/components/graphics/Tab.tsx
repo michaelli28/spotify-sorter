@@ -1,17 +1,24 @@
-import type { ComponentPropsWithoutRef, CSSProperties } from "react";
+import type {
+  ComponentPropsWithoutRef,
+  CSSProperties,
+  ReactNode,
+} from "react";
 import clsx from "clsx";
 import { tabTint } from "@/src/lib/sleeves/inks";
 import { TEMPERATURES, type Temperature } from "@/src/lib/sleeves/temperature";
 
 interface TabOwnProps {
-  /** 1-based catalogue number, printed as two digits: the category's identity on every page. */
-  catalogueNo: number;
+  /** 1-based catalogue number, printed as two digits: the category's identity on every page.
+   *  null prints no number (a blank slot waiting for a real category). */
+  catalogueNo: number | null;
   /** The tint. null prints the dashed blank tab (Add a category, the empty crate). */
   temperature: Temperature | null;
   /** "review": 16px tall. "crate": 18u tall; needs --u from <CrateFigure>. */
   size: "review" | "crate";
   /** The open or current divider: printed reversed and lifted. */
   reversed?: boolean;
+  /** Printed in place of the number, e.g. classify's number and live count. */
+  children?: ReactNode;
 }
 
 export type TabProps = TabOwnProps &
@@ -32,6 +39,7 @@ export function Tab({
   temperature,
   size,
   reversed = false,
+  children,
   className,
   style,
   ...rest
@@ -65,7 +73,8 @@ export function Tab({
         ...style,
       }}
     >
-      {String(catalogueNo).padStart(2, "0")}
+      {children ??
+        (catalogueNo === null ? null : String(catalogueNo).padStart(2, "0"))}
     </span>
   );
 }

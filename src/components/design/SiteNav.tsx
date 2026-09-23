@@ -14,6 +14,8 @@ import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 const HIDDEN = new Set(["/setup", "/label"]);
 
 const sorted = (s: AppStatus) => s.categories > 0 && s.unsorted === 0;
+// /label needs categories to label against; a mismatch reports none.
+const labelling = (s: AppStatus) => s.categories > 0;
 
 // A step is a link only when loading its page spends nothing: /review with no
 // categories proposes, /classify with unsorted tracks classifies, on load.
@@ -181,10 +183,10 @@ export function SiteNav() {
         </ol>
         <Item
           href="/label"
-          live={!locked}
+          live={fresh !== null && labelling(fresh)}
           className={clsx(
             ITEM,
-            tone(false, !locked),
+            tone(false, last !== null && labelling(last)),
             "-mr-2.5 tab:mr-0 tab:ml-2 tab:border-l tab:border-rule-strong tab:pl-4",
           )}
         >

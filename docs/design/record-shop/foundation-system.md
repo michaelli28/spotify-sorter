@@ -25,20 +25,18 @@ switch to the evening stock automatically under `prefers-color-scheme: dark`.
 | `danger` · `success` · `warn` / `warn-ink`             | delete, errors · "on Spotify", credits · warning fill / text     |
 | `kraft` · `hollow` · `rec-face` · `rec-edge`           | crate graphics only                                              |
 | `tab-stock` · `tab-ink`                                | a divider tab's card and number (same in both stocks)            |
-| `tab-pressed` · `tab-pressed-ink` · `tab-pressed-edge` | the open/current tab, printed reversed                           |
+| `tab-pressed` · `tab-pressed-ink` · `tab-pressed-edge` | the open/current tab, printed in ink (cream at night)            |
 | `t-dusk` · `t-charge` · `t-glow` · `t-haze`            | tab tint per temperature (`bg-t-haze`)                           |
 | `scrim`                                                | behind a dialog                                                  |
+| `counter`                                              | /setup's ground: kraft by day, the stock's well at night         |
 
 Raw vars only (no utility): `--riso-{yellow,pink,violet,aqua,red,teal,mblue,fblue,burgundy}`,
 `--grain` (the fibre-noise tile), `--weight-body` (400 day, 370 night). A sleeve exported to
 canvas can't read CSS vars: use literals there.
 
-**Legacy, do not use:** `--color-bg-*`, `--color-text-*`, `--color-border-*`,
-`--color-accent` and `--color-accent-strong` (now ink), `--color-accent-soft` (now
-rule-strong), `--color-warning`, `--ease-out-expo`. They exist only so
-unmigrated pages keep rendering; they go once every page is migrated. Migrate as you touch:
-`text-[var(--color-text-secondary)]` → `text-ink-2`, `bg-[var(--color-bg-elevated)]` →
-`bg-card`, `border-[var(--color-border-default)]` → `border-rule`.
+The pre-redesign aliases (`--color-bg-*`, `--color-text-*`, `--color-border-*`,
+`--color-accent-strong`/`-soft`, `--color-warning`, `--ease-out-expo`) are gone.
+`tests/unit/design-tokens.test.ts` fails if any file in `app/` or `src/` reads one again.
 
 ## 2. Type
 
@@ -110,8 +108,7 @@ In components, take transitions from the hook so reduced motion is handled:
 Every value comes from the tokens above: `snap` = `SPRING_SNAP`, `settle` and `spring` =
 `SPRING_SETTLE`, `stagger` = `STAGGER` as `{ staggerChildren, delayChildren }`, and
 `itemDelay(i)` = `staggerDelay(i)`. Under reduced motion all of them go to 0. Use `itemDelay`,
-not `staggerDelay`, in components: only the hook's version handles reduced motion. The hook's
-`SPRING` and `EASE_OUT_EXPO` exports are legacy names for `SPRING_SETTLE` and `EASE_OUT`. The
+not `staggerDelay`, in components: only the hook's version handles reduced motion. The
 root has
 `<MotionConfig reducedMotion="user">`, so transforms already stop under reduced motion; give
 every set piece its opacity-only version (`DURATION.reduced`). Transform and opacity only,
@@ -125,15 +122,21 @@ to it.
 `variant`: `primary` (orange, Caprasimo label, keyline 4px out of register until hover or
 focus) · `quiet` (ink, underlined) · `ghost` (quiet in ink-2: Re-propose all…, Reconnect,
 Close) · `danger` (quiet in danger) · `danger-confirm` (card fill, danger keyline: a dialog's
-destructive confirm, e.g. Wipe & re-propose; start focus on "Not yet") · `icon` (44px
-circle; always `aria-label`; Lucide icon with `strokeWidth={1.75}`). `size`: `md` (primary
-56px / quiet 1rem) or `sm` (primary 44px / quiet 0.875rem). Default is `primary md`.
-Primary keeps 4px right/bottom margin for its keyline; in the top strip on phones it drops
-to 52px by itself.
+destructive confirm, e.g. Wipe & re-propose; start focus on "Not yet") · `ink` (card fill,
+navy keyline that snaps rather than slides: /label's Save, Yes, No, where no orange may print)
+· `icon` (44px circle; always `aria-label`; Lucide icon with `strokeWidth={1.75}`). `size`:
+`md` (primary 56px / quiet 1rem) or `sm` (primary 44px / quiet 0.875rem). Default is
+`primary md`. Primary keeps 4px right/bottom margin for its keyline; in the top strip on
+phones it drops to 52px by itself. Quiet, ghost and danger are at least 44 × 44px.
+
+Disabled fades every variant to 50%. `busy` locks the button like `disabled` and sets
+`aria-busy`, but keeps the label at full ink: use it while work runs ("Checking…",
+"Saving…", "Re-scoring…"), so the only sign of that work stays legible.
 
 ```tsx
 <Button onClick={apply}>Apply to Spotify</Button>
 <Button variant="quiet" onClick={add}>Add track</Button>
+<Button busy={saving}>{saving ? "Saving…" : "Continue"}</Button>
 <Button variant="icon" aria-label="Next category (smaller)"><ChevronRight strokeWidth={1.75} /></Button>
 <ButtonLink href="/review" variant="ghost">Categories</ButtonLink>
 <a className={buttonClass({ variant: "quiet" })} href="spotify:">Open Spotify</a>
@@ -143,7 +146,7 @@ to 52px by itself.
 
 `Input`: an underline input with its label above. Props: every `<input>` prop plus `label`,
 `hint`, `error` (danger line with `role="alert"`, sets `aria-invalid`, joins
-`aria-describedby` after the hint). `Field`: the same label/hint/error wiring around any
+`aria-describedby` after the hint). The underline input is at least 44px tall. `Field`: the same label/hint/error wiring around any
 control via a render prop. `controlClass({ kind, invalid })`: `underline` (default),
 `display` (a name in Caprasimo on a dotted rule, solid ink on focus), `ruled` (a
 description on a ruled index card). Validate on blur.
@@ -197,6 +200,8 @@ same recipe for motion or dnd-kit elements.
 Props: `title`, `artist`, `href?` (title becomes a link, e.g. `spotify:track:<id>`),
 `index?` (mono ink-3, zero-padded), `media?` (art before the title: pass `<AlbumArt>` or a
 sleeve at 40–44px; it draws its own keyline), `trailing?` (one width per list), `className?`.
+With `href`, the whole row is the link's target (the title line alone is 22px); `trailing`
+sits above it and stays clickable.
 The art adds no name of its own: a cover is `alt=""` and a sleeve without `title` is
 `aria-hidden`. Only a missing cover speaks: `PlainSleeve` is `role="img"`, "No cover art".
 Inside a row that is already a link, pass `link={false}`. Render inside `<ol>`/`<ul>`. Never pass a score, rank or bin.
@@ -218,8 +223,24 @@ Inside a row that is already a link, pass `link={false}`. Render inside `<ol>`/`
 ### PageShell (`design/PageShell`)
 
 `<main class="page-frame">` with an optional `back` (`{ href: SafeHref, label }`, ghost sm
-link above), `eyebrow` (one ink-2 line above the title; only for information the title
+link above, its arrow outside the one underline), `eyebrow` (one ink-2 line above the title; only for information the title
 doesn't carry) and `title` (h1, display-2). No animation of its own.
+
+### ProgressBand (`design/ProgressBand`)
+
+A run's progress in the top strip (classify, apply): an ink band growing `value / total`
+on `SPRING_SETTLE` in a paper-deep well. Props: `value`, `total` (0 or less = unknown, no
+value reported), `label` (its accessible name), `className` (its width).
+
+```tsx
+<ProgressBand value={done} total={total} label="Playlists written" className="w-28 tab:w-56" />
+```
+
+### useMediaQuery (`src/hooks/useMediaQuery`)
+
+`useMediaQuery(query, fallback = false)` for the layout choices CSS can't make (which
+control renders where). `fallback` holds on the server, during hydration and in jsdom.
+`TAB_UP` and `DESK_UP` are the `tab:` and `desk:` breakpoints as queries.
 
 ### NavLock (`design/NavLock`)
 
@@ -233,7 +254,8 @@ inside `PageTransition`. Neither the nav nor the slot remounts per route.
 
 **Site nav.** Shown on every route except `/setup` and `/label` (so it now shows on `/`).
 Wordmark with the record mark (links home; `aria-current="page"` on `/`), then Sources ·
-Categories · Fit · Apply, then Labels behind a 1px rule; a 1.5px ink rule closes it. The
+Categories · Fit · Apply, then Labels behind a 1px rule (locked like a step until
+categories exist: before setup and on a version mismatch /label has nothing to read); a 1.5px ink rule closes it. The
 current step is ink with a 2px underline that slides between steps (`layoutId`,
 `SPRING_SNAP`). A step is a link only when its page spends nothing on load; locked steps
 are `span[role=link][aria-disabled]` in ink-3, out of the tab order. Phones: wordmark and
@@ -245,7 +267,10 @@ nav links (home: drop Categories and Labels from its routes list).
 DOM), `start?` (a control before the status, e.g. the Fit ruler).
 
 - **Render it from the page's first render, never behind a loading check.** While data
-  loads, pass a disabled `end` and an empty or "Loading…" `status`. On the server it prints a
+  loads, pass a disabled `end` and an empty or "Loading…" `status`. `end={null}` is right
+  only when a label would be a guess (diff's first load: "Sort N tracks" or "Tune the
+  fit") or there is nothing to press (classify while it runs). The strip keeps its height
+  either way, so nothing below it moves. On the server it prints a
   hidden claim that holds the strip's room until the bar portals in after hydration; a bar
   that mounts later pushes the whole page down.
 - Render it anywhere in the page (convention: first child of `<main>`). It prints into the

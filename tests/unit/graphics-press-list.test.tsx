@@ -115,6 +115,23 @@ describe("<PressList>", () => {
       expect(within(rows()[1]).queryByText("on Spotify")).toBeNull();
     });
 
+    // In the count cell the mark truncated names and broke the count column.
+    // After the bar it takes a slot every row reserves, so every bar keeps
+    // the same room and the same scale.
+    it("prints the mark after the bar, leaving the count cell and the bar scale alone", () => {
+      render(<PressList rows={ROWS} onSpotify={some} />);
+      const [marked, plain] = rows();
+      expect(within(marked).getByText("1,442").textContent).toBe("1,442");
+      const bar = marked.querySelector("[data-bar]")!;
+      expect(within(marked).getByText("on Spotify").parentElement).toBe(
+        bar.parentElement,
+      );
+      const plainBar = plain.querySelector("[data-bar]")!;
+      expect(plainBar.parentElement!.children).toHaveLength(
+        bar.parentElement!.children.length,
+      );
+    });
+
     it("prints no marks when every row is on Spotify (they would all say the same)", () => {
       render(
         <PressList rows={ROWS} onSpotify={new Set(ROWS.map((r) => r.id))} />,

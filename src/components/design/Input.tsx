@@ -15,7 +15,7 @@ export type ControlKind = "underline" | "display" | "ruled";
 
 const CONTROL: Record<ControlKind, string> = {
   underline:
-    "w-full border-b-[1.5px] bg-transparent py-2 text-body text-ink placeholder:text-ink-3 focus:shadow-[0_1px_0_0_var(--ink)]",
+    "w-full min-h-11 border-b-[1.5px] bg-transparent py-2 text-body text-ink placeholder:text-ink-3 focus:shadow-[0_1px_0_0_var(--ink)]",
   display:
     "w-full border-b-[1.5px] border-dotted bg-transparent pb-1.5 font-display text-title text-ink focus:border-solid",
   ruled: "ruled-card w-full rounded-[2px] border px-3 pt-3 pb-2.5 text-ink",

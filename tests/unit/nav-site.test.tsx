@@ -93,7 +93,9 @@ describe("SiteNav", () => {
     nav.pathname = "/";
     const fetch = stubStatus();
     render(<SiteNav />);
-    expect(screen.getByRole("navigation", { name: "Site" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Site" }),
+    ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/status", expect.anything());
     for (const name of STEPS) expect(link(name)).toBeNull();
     await answer({ ...SORTED, unsorted: 5 });
@@ -191,6 +193,36 @@ describe("SiteNav", () => {
     expect(link("Categories")).toHaveAttribute("href", "/review");
     expect(link("Fit")).toHaveAttribute("href", "/classify");
     expect(link("Apply")).toHaveAttribute("href", "/apply");
+    expect(link("Labels")).toHaveAttribute("href", "/label");
+  });
+
+  // The nav now shows on / too, so Labels would appear before setup and on a
+  // version mismatch, where /label has nothing to read. The old home offered
+  // it only once categories existed.
+  it.each<[string, Partial<Status>]>([
+    ["no categories yet", { categories: 0, unsorted: 3172 }],
+    [
+      "a cache version mismatch",
+      { connected: false, categories: 0, tracks: 0, version_mismatch: true },
+    ],
+  ])("locks Labels with %s", async (_, over) => {
+    nav.pathname = "/";
+    stubStatus();
+    render(<SiteNav />);
+    expect(link("Labels")).toBeNull();
+    await answer({ ...SORTED, ...over });
+    expect(link("Labels")).toBeNull();
+    expect(screen.getByRole("link", { name: "Labels" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("opens Labels once categories exist", async () => {
+    nav.pathname = "/";
+    stubStatus();
+    render(<SiteNav />);
+    await answer({ ...SORTED, unsorted: 12 });
     expect(link("Labels")).toHaveAttribute("href", "/label");
   });
 

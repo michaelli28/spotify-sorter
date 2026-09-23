@@ -6,18 +6,21 @@ export interface BlindTrackIds {
   sample: "present" | "missing";
 }
 
-// Songs in the pre-registered labelling sample. Lists the redesign adds (home
-// crate records, diff arrivals) drop these so the labeller never meets them
-// beside a category. A malformed sample throws: better a failed list than one
-// that quietly shows every sampled song.
+// Songs the labeller will judge blind: the pre-registered sample and the gold
+// set (both labelled on /label). Lists the redesign adds (home crate records,
+// diff arrivals) drop these so the labeller never meets them beside a
+// category. A malformed file throws: better a failed list than one that
+// quietly shows every sampled song.
 export async function blindTrackIds(): Promise<BlindTrackIds> {
-  const sample = await readSample();
-  if (!sample) return { ids: new Set(), sample: "missing" };
+  const [sample, gold] = await Promise.all([readSample(), readGoldSample()]);
+  const goldIds = gold?.track_ids ?? [];
+  if (!sample) return { ids: new Set(goldIds), sample: "missing" };
   return {
     ids: new Set([
       ...sample.random_track_ids,
       ...sample.relabel_track_ids,
       ...sample.pairs.map((p) => p.track_id),
+      ...goldIds,
     ]),
     sample: "present",
   };

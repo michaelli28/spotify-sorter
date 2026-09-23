@@ -26,7 +26,7 @@ export function CrateFigure({
   ...rest
 }: ComponentPropsWithoutRef<"div">) {
   return (
-    <div className={clsx("@container w-full", className)}>
+    <div className={clsx("@container isolate w-full", className)}>
       <div
         {...rest}
         className="relative"

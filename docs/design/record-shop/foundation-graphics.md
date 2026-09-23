@@ -102,12 +102,16 @@ identical "Open in Spotify" links; `link={false}` takes no label.
 ```tsx
 <Tab catalogueNo={4} temperature="haze" size="review" reversed={open} className="absolute -top-4 left-[63px]" />
 <Tab catalogueNo={42} temperature={null} size="review" />             // dashed blank (Add a category)
+<Tab catalogueNo={null} temperature={null} size="review" />           // unnumbered blank (review, proposing)
+<Tab catalogueNo={7} temperature="haze" size="crate">{number}{count}</Tab> // children replace the number
 <TemperatureKey className="text-[var(--ink-2)]" />                    // dusk · charge · glow · haze
 ```
 
 A `<span>` with no positioning of its own. `size="review"` is 16px tall. `size="crate"` is 18u
 tall and fills its `CrateTab`'s width. `reversed` is the open or current tab: `--tab-pressed`,
 lifted 3px (review) or 3u (crate). The colour picker's swatches can reuse `tabTint(t)`.
+`catalogueNo={null}` prints no number (a slot waiting for a real category). `children` print
+in place of the number: classify's crate puts its number and live count there.
 
 ### Crate (home and classify)
 
@@ -146,7 +150,8 @@ const layout = crateLayout(orderBySize(entries)); // entries: { id, catalogueNo,
   inline lengths.
 - Layers: `CrateLayer` < `CrateTab`s (z 10) < the pulled sleeve (`CRATE_Z.sleeve`, 60) <
   `CrateSlats` (70). Tabs never overlap a divider in front of them, so the separate HTML
-  layer paints like the mockup.
+  layer paints like the mockup. `CrateFigure` is its own stacking context (`isolate`), so
+  those z-indexes never reach the z-30 top strip or a z-50 dialog.
 - Home adds the sleeve, the sticker, flipping and the roving tabindex (`classify/roving.ts`).
   Classify puts a `Tab` plus a mono count in each `CrateTab` and bumps it (`SPRING_SNAP`).
 
@@ -165,9 +170,11 @@ const layout = crateLayout(orderBySize(entries)); // entries: { id, catalogueNo,
 it's given. Bars use `scaleX = count / max` (default: the largest count), clamped to 1, and grow
 in 480ms `EASE_OUT`, staggered 12ms. A count of 0 draws no bar (the brief keeps no-data
 categories out of the list; the component doesn't enforce that). "on Spotify" prints after the
-count (brief, "States that change what the numbers mean": partly applied) only while some rows, but not all, are on Spotify. At
-1440px it can truncate a long name in its column. At ≤720px, rows past `phoneLimit` hide
-behind "Show all N" / "Show the top N". The heading and data line belong to the page.
+bar, under the count (brief, "States that change what the numbers mean": partly applied), only
+while some rows, but not all, are on Spotify. Every row then reserves the mark's slot, so all
+bars keep one scale, and the mark adds no height to its row. `onSpotify` is a Set, which a
+server component can pass. At ≤720px, rows past `phoneLimit` hide behind "Show all N" /
+"Show the top N". The heading and data line belong to the page.
 
 ### sleeveToJpeg (Apply covers, spec §3.4)
 

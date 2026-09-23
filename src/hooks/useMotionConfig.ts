@@ -12,10 +12,6 @@ import {
   staggerDelay,
 } from "@/src/components/design/motion";
 
-/** Legacy names for the brief §4.4 tokens: remove after pages migrate. */
-export const SPRING = SPRING_SETTLE;
-export const EASE_OUT_EXPO = EASE_OUT;
-
 export interface MotionTokens {
   reduced: boolean;
   spring: Transition;
@@ -35,7 +31,7 @@ export interface MotionTokens {
 
 const FULL: Readonly<MotionTokens> = {
   reduced: false,
-  spring: SPRING,
+  spring: SPRING_SETTLE,
   pageEase: { duration: 0.6, ease: EASE_OUT },
   stagger: { staggerChildren: STAGGER.each, delayChildren: STAGGER.delay },
   fade: { duration: 0.2 },
