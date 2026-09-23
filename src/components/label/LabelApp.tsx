@@ -17,6 +17,7 @@ import {
   firstUnfinishedMode,
   formatLocal,
   forwardIndex,
+  isOpen,
   itemsFor,
   markDone,
   nextIndex,
@@ -104,6 +105,10 @@ export function LabelApp() {
   const items = itemsFor(state, mode);
   const index = cursor[mode] ?? nextIndex(items, -1, now);
   const doneCount = items.filter((i) => i.done).length;
+  // Unlabeled is not the same as actionable: relabel items are time-locked one
+  // by one, and bulk accept can only write the open ones. One value keeps the
+  // affordance and the count it advertises honest together.
+  const openUnlabeled = items.filter((i) => !i.done && isOpen(i, now));
 
   async function submit(input: LabelInput, id: string, remember?: SavedAnswer) {
     setBusy(true);
@@ -315,6 +320,9 @@ export function LabelApp() {
                 setMode(m.id);
                 setError(null);
                 setNow(Date.now());
+                // A confirm belongs to the queue it was opened on; letting it
+                // follow the switch would aim it at a queue nobody opened it for.
+                setBulk(null);
               }}
               className={clsx(
                 "relative py-1 text-sm tracking-tight transition-colors duration-200",
@@ -328,7 +336,7 @@ export function LabelApp() {
             </button>
           ))}
         </nav>
-        {items.some((i) => !i.done) && (
+        {openUnlabeled.length > 0 && (
           <div className="ml-auto flex items-baseline gap-4">
             {bulk === null && (
               <button
@@ -343,7 +351,7 @@ export function LabelApp() {
               <>
                 <span className="text-sm text-[var(--color-text-secondary)]">
                   Save the model&apos;s answer for the{" "}
-                  {items.filter((i) => !i.done).length} remaining?
+                  {openUnlabeled.length} remaining?
                 </span>
                 <Button
                   variant="ghost"
