@@ -8,62 +8,50 @@ export interface TrackRowProps {
   artist: string;
   /** Makes the title a link (e.g. a spotify: URI). */
   href?: string;
+  /** Art before the title: an <AlbumArt> or sleeve at 40–44px. It draws its
+   *  own keyline and must not name itself (the title already does). */
+  media?: ReactNode;
   /** A control at the row's end. Keep it one width across a list. */
   trailing?: ReactNode;
   className?: string;
 }
 
-// Written out whole so Tailwind can see each class.
-const COLUMNS: Record<`${boolean}-${boolean}`, string> = {
-  "true-true": "grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)_auto]",
-  "true-false": "grid-cols-[2rem_minmax(0,3fr)_minmax(0,2fr)]",
-  "false-true": "grid-cols-[minmax(0,3fr)_minmax(0,2fr)_auto]",
-  "false-false": "grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
-};
-
 /**
- * One track as a liner-notes line: a fixed index column, the title in cream,
- * the artist in secondary. Fractional columns rather than content widths, so
- * every row in a list lines up. Render inside an <ol> or <ul>.
+ * One track as a liner-notes line: catalogue number in mono ink-3, the art,
+ * then the title in Franklin 600 over the artist in ink-2. Render inside an
+ * <ol> or <ul>.
  */
 export function TrackRow({
   index,
   title,
   artist,
   href,
+  media,
   trailing,
   className,
 }: TrackRowProps) {
-  const numbered = index !== undefined;
   return (
-    <li
-      className={clsx(
-        "grid items-baseline gap-x-4 py-1.5 text-sm",
-        COLUMNS[`${numbered}-${trailing !== undefined}`],
-        className,
-      )}
-    >
-      {numbered && (
-        <span className="text-right font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--color-text-tertiary)]">
+    <li className={clsx("flex items-center gap-3 py-1", className)}>
+      {index !== undefined && (
+        <span className="mono num w-8 flex-none text-right text-ink-3">
           {String(index).padStart(2, "0")}
         </span>
       )}
-      {href ? (
-        <a
-          href={href}
-          className="truncate text-[var(--color-text-primary)] hover:underline"
-        >
-          {title}
-        </a>
-      ) : (
-        <span className="truncate text-[var(--color-text-primary)]">
-          {title}
-        </span>
-      )}
-      <span className="truncate text-[var(--color-text-secondary)]">
-        {artist}
+      {media !== undefined && <span className="flex-none">{media}</span>}
+      <span className="min-w-0 flex-1 leading-snug">
+        {href ? (
+          <a
+            href={href}
+            className="block truncate font-semibold text-ink underline-offset-4 hover:underline"
+          >
+            {title}
+          </a>
+        ) : (
+          <span className="block truncate font-semibold text-ink">{title}</span>
+        )}
+        <span className="block truncate text-ink-2">{artist}</span>
       </span>
-      {trailing}
+      {trailing !== undefined && <span className="flex-none">{trailing}</span>}
     </li>
   );
 }

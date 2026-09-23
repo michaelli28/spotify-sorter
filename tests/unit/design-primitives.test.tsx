@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { Input } from "@/src/components/design/Input";
+import { Field, Input } from "@/src/components/design/Input";
 import { Card, surfaceClass } from "@/src/components/design/Card";
 import { TrackRow } from "@/src/components/design/TrackRow";
 import { PageShell } from "@/src/components/design/PageShell";
@@ -42,13 +42,43 @@ describe("Input", () => {
     );
   });
 
-  // Rust at rest, brass while focused: otherwise a focused invalid field looks
+  // Danger at rest, ink while focused: otherwise a focused invalid field looks
   // exactly like an unfocused one (its outline is off).
   it("still shows focus once a value was rejected", () => {
     render(<Input label="Key" error="Rejected." />);
     const field = screen.getByLabelText("Key");
     expect(field.className).toMatch(/focus:outline-none/);
-    expect(field.className).toMatch(/focus:border-\[var\(--color-accent\)\]/);
+    expect(field.className).toMatch(/(^|\s)border-danger(\s|$)/);
+    expect(field.className).toMatch(/(^|\s)focus:border-ink(\s|$)/);
+  });
+
+  it("describes the field with its hint, then its error", () => {
+    render(<Input label="Client ID" hint="32 characters" error="Too short." />);
+    expect(screen.getByLabelText("Client ID")).toHaveAccessibleDescription(
+      "32 characters Too short.",
+    );
+  });
+});
+
+describe("Field", () => {
+  // Textareas and custom controls get the same label, hint and error wiring.
+  it("labels and describes whatever control it wraps", () => {
+    render(
+      <Field label="Description" hint="One or two lines." error="Too long.">
+        {(control) => <textarea {...control} />}
+      </Field>,
+    );
+    const box = screen.getByRole("textbox", { name: "Description" });
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(box).toHaveAccessibleDescription("One or two lines. Too long.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Too long.");
+  });
+
+  it("stays quiet with no error", () => {
+    render(<Field label="Name">{(control) => <input {...control} />}</Field>);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    expect(box).not.toHaveAttribute("aria-invalid");
+    expect(box).not.toHaveAttribute("aria-describedby");
   });
 });
 
@@ -94,6 +124,25 @@ describe("TrackRow", () => {
       "href",
       "spotify:track:1",
     );
+  });
+
+  // Liner notes: the art square sits before the title, and never names itself.
+  it("prints a media slot for art before the title", () => {
+    render(
+      <ul>
+        <TrackRow
+          title="drive"
+          artist="Current Blue"
+          media={<svg aria-hidden="true" data-testid="art" />}
+        />
+      </ul>,
+    );
+    const art = screen.getByTestId("art");
+    expect(screen.getByRole("listitem")).toContainElement(art);
+    expect(
+      art.compareDocumentPosition(screen.getByText("drive")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("renders trailing content", () => {

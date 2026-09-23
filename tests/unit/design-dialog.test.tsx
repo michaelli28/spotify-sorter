@@ -181,4 +181,28 @@ describe("Dialog", () => {
     expect(behind.closest("[aria-hidden='true']")).toBeNull();
     expect(behind.closest("[inert]")).toBeNull();
   });
+
+  // The hang tag's hole and eyelet are print, not content.
+  it("punches the eyelet as decoration: no name, no tab stop", async () => {
+    const dialog = await openHarness();
+    const eyelet = dialog.querySelector("[data-eyelet]");
+    expect(eyelet).not.toBeNull();
+    expect(eyelet).toHaveAttribute("aria-hidden", "true");
+    expect(eyelet!.querySelector("[tabindex], button, a")).toBeNull();
+    expect(dialog.style.maskImage || dialog.style.webkitMaskImage).toMatch(
+      /radial-gradient/,
+    );
+  });
+
+  it("can set its title as the price, still the dialog's name", () => {
+    render(
+      <Dialog open onClose={() => {}} title="$0.42" titleSize="price">
+        body
+      </Dialog>,
+    );
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("$0.42");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "$0.42" }),
+    ).toBeInTheDocument();
+  });
 });

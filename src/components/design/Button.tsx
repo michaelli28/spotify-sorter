@@ -8,7 +8,18 @@ import {
 import Link from "next/link";
 import clsx from "clsx";
 
-export type ButtonVariant = "primary" | "ghost" | "danger";
+/**
+ * primary: the view's one orange action. quiet: underlined ink text. ghost:
+ * quiet in ink-2 (the brief's .is-2). danger: quiet in danger. danger-confirm:
+ * a dialog's destructive confirm. icon: a 44px circle; give it an aria-label.
+ */
+export type ButtonVariant =
+  | "primary"
+  | "quiet"
+  | "ghost"
+  | "danger"
+  | "danger-confirm"
+  | "icon";
 export type ButtonSize = "md" | "sm";
 
 /**
@@ -31,14 +42,26 @@ export interface ButtonClassOptions {
   className?: string;
 }
 
-// ::after on the element itself, so hovering anywhere on the label grows it
-// and a plain <a> styled with buttonClass() gets the same underline.
-const UNDERLINE = [
-  "after:absolute after:inset-x-1 after:h-px after:origin-left after:scale-x-40",
-  "after:transition-transform after:duration-250 after:ease-out-expo",
-  "motion-reduce:after:transition-none",
-  "hover:after:scale-x-100 focus-visible:after:scale-x-100",
-  "disabled:after:hidden",
+// A block of ink with its keyline printed 4px out of register (::after, so a
+// plain <a> styled with buttonClass() gets it too). Hover and focus pull it in.
+const PRINTED = [
+  "relative isolate inline-flex items-center justify-center whitespace-nowrap rounded-[3px] font-display font-normal tracking-[0.01em]",
+  // Room for the keyline, so it ends flush with the column, not 4px past it.
+  "mr-1 mb-1",
+  "focus-visible:outline-offset-[6px]",
+  "after:pointer-events-none after:absolute after:inset-0 after:rounded-[3px] after:border-[1.5px] after:content-['']",
+  "after:translate-1 after:transition-[translate] after:duration-180 after:ease-out motion-reduce:after:transition-none",
+  "not-disabled:hover:after:translate-0 focus-visible:after:translate-0 not-disabled:active:after:translate-0",
+  "transition-colors duration-100",
+  "disabled:cursor-not-allowed disabled:opacity-50",
+];
+
+// Underlined text with a 44px target; the underline darkens on hover.
+const QUIET = [
+  "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap font-medium",
+  "underline decoration-[1.5px] underline-offset-[6px]",
+  "transition-[color,text-decoration-color] duration-180 ease-out",
+  "disabled:cursor-not-allowed disabled:text-ink-3 disabled:decoration-rule",
 ];
 
 export function buttonClass({
@@ -46,20 +69,28 @@ export function buttonClass({
   size = "md",
   className,
 }: ButtonClassOptions = {}): string {
-  const underlined = variant !== "ghost";
+  const printed = variant === "primary" || variant === "danger-confirm";
+  const quiet =
+    variant === "quiet" || variant === "ghost" || variant === "danger";
   return clsx(
-    "relative inline-flex items-baseline gap-1 px-1 font-medium tracking-tight",
-    "transition-colors duration-200",
-    "disabled:cursor-not-allowed disabled:opacity-50",
-    size === "md" ? "py-2 text-base" : "py-1.5 text-sm",
-    underlined && UNDERLINE,
-    underlined && (size === "md" ? "after:bottom-1" : "after:bottom-0.5"),
+    printed && PRINTED,
+    printed &&
+      (size === "md" ? "min-h-14 px-8 text-lead" : "min-h-11 px-6 text-body"),
     variant === "primary" &&
-      "text-[var(--color-text-primary)] after:bg-[var(--color-accent)]",
-    variant === "danger" &&
-      "text-[var(--color-danger)] after:bg-[var(--color-danger)]",
+      "bg-accent text-on-accent after:border-ink not-disabled:active:bg-accent-press",
+    variant === "danger-confirm" &&
+      // An inset line, not a border: a border would inset the keyline too.
+      "bg-card text-danger shadow-[inset_0_0_0_1.5px_var(--danger)] after:border-danger",
+    quiet && QUIET,
+    quiet && (size === "md" ? "text-body" : "text-sm underline-offset-4"),
+    variant === "quiet" &&
+      "text-ink decoration-rule-strong hover:decoration-ink",
     variant === "ghost" &&
-      "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
+      "text-ink-2 decoration-rule-strong hover:text-ink hover:decoration-ink",
+    variant === "danger" &&
+      "text-danger decoration-[color-mix(in_oklab,var(--danger)_45%,var(--paper))] hover:decoration-danger",
+    variant === "icon" &&
+      "inline-grid size-11 place-items-center rounded-full text-ink transition-colors duration-180 ease-out hover:bg-paper-deep disabled:cursor-not-allowed disabled:text-ink-3 [&_svg]:size-5",
     className,
   );
 }

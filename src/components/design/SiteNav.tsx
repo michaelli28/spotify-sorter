@@ -10,8 +10,8 @@ import { useNavLockState } from "@/src/components/design/NavLock";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
 // /label: leaving and coming back resets its in-memory "hide the model's
-// guesses" choice, which would un-blind a labeller.
-const HIDDEN = new Set(["/", "/setup", "/label"]);
+// guesses" choice, which would un-blind a labeller. / shows it (spec §3.1).
+const HIDDEN = new Set(["/setup", "/label"]);
 
 const sorted = (s: AppStatus) => s.categories > 0 && s.unsorted === 0;
 
@@ -40,7 +40,36 @@ const STEPS: readonly {
 ];
 
 const ITEM =
-  "inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-sm transition-colors duration-200";
+  "inline-flex min-h-11 min-w-11 items-center justify-center px-2.5 font-medium transition-colors duration-180 ease-out";
+
+// Available steps in ink-2, the current one in ink, locked ones in ink-3.
+const tone = (current: boolean, open: boolean) =>
+  current
+    ? "text-ink"
+    : open
+      ? "text-ink-2 hover:text-ink"
+      : "cursor-default text-ink-3";
+
+/** The shop's record: a navy disc, two grooves, a paper label. */
+function RecordMark() {
+  return (
+    <svg
+      width="26"
+      height="26"
+      viewBox="0 0 26 26"
+      aria-hidden="true"
+      className="flex-none"
+    >
+      <circle cx="13" cy="13" r="12" className="fill-current" />
+      <g className="fill-none stroke-paper" strokeWidth=".7" opacity=".55">
+        <circle cx="13" cy="13" r="9" />
+        <circle cx="13" cy="13" r="6.5" />
+      </g>
+      <circle cx="13" cy="13" r="3.4" className="fill-paper" />
+      <circle cx="13" cy="13" r="1" className="fill-current" />
+    </svg>
+  );
+}
 
 function Item({
   href,
@@ -76,7 +105,7 @@ function Item({
 export function SiteNav() {
   const pathname = usePathname();
   const { locked, releases } = useNavLockState();
-  const { spring } = useMotionConfig();
+  const { snap } = useMotionConfig();
   const hidden = HIDDEN.has(pathname);
   // A finished job may have changed the library, so a release asks again too.
   const key = `${pathname}#${releases}`;
@@ -107,21 +136,22 @@ export function SiteNav() {
   const last = locked ? null : (fetched?.status ?? null);
 
   return (
-    <nav aria-label="Site" className="mx-auto max-w-5xl px-gutter pt-3 md:pt-6">
-      <div className="grid grid-cols-[1fr_auto] items-baseline md:flex">
+    <nav aria-label="Site" className="page-frame pt-4">
+      {/* Phones: wordmark and Labels on row 1, the four steps across row 2. */}
+      <div className="flex flex-wrap items-center border-b-[1.5px] border-ink pb-3 tab:flex-nowrap tab:gap-6">
         <Item
           href="/"
           live={!locked}
+          current={pathname === "/"}
           className={clsx(
-            "inline-flex min-h-11 items-center justify-self-start font-[family-name:var(--font-display)] text-xl tracking-tight transition-colors duration-200",
-            locked
-              ? "text-[var(--color-text-tertiary)]"
-              : "text-[var(--color-text-primary)]",
+            "mr-auto inline-flex min-h-11 items-center gap-2.5 font-display text-lead tracking-[-0.005em] transition-colors duration-180 ease-out tab:mr-0",
+            locked ? "text-ink-3" : "text-ink",
           )}
         >
+          <RecordMark />
           SpotifySorter
         </Item>
-        <ol className="col-span-2 row-start-2 -mx-2 flex justify-between md:mr-8 md:ml-auto md:gap-4">
+        <ol className="order-3 -mx-2.5 flex w-[calc(100%+20px)] justify-between tab:order-none tab:mx-0 tab:ml-auto tab:w-auto tab:justify-start tab:gap-2">
           {STEPS.map((step) => {
             const current = step.pages.includes(pathname);
             const live = fresh !== null && step.open(fresh);
@@ -132,22 +162,15 @@ export function SiteNav() {
                   href={step.href}
                   live={live}
                   current={current}
-                  className={clsx(
-                    ITEM,
-                    current
-                      ? "text-[var(--color-text-primary)]"
-                      : looksOpen
-                        ? "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                        : "text-[var(--color-text-tertiary)] opacity-60",
-                  )}
+                  className={clsx(ITEM, tone(current, looksOpen))}
                 >
                   <span className="relative">
                     {step.label}
                     {current && (
                       <motion.span
                         layoutId="site-nav-current"
-                        transition={spring}
-                        className="absolute inset-x-0 -bottom-1 h-px bg-[var(--color-text-primary)]"
+                        transition={snap}
+                        className="absolute inset-x-0 -bottom-[3px] h-0.5 bg-current"
                       />
                     )}
                   </span>
@@ -161,8 +184,8 @@ export function SiteNav() {
           live={!locked}
           className={clsx(
             ITEM,
-            "col-start-2 row-start-1 -mr-2 text-[var(--color-text-tertiary)]",
-            locked ? "opacity-60" : "hover:text-[var(--color-text-primary)]",
+            tone(false, !locked),
+            "-mr-2.5 tab:mr-0 tab:ml-2 tab:border-l tab:border-rule-strong tab:pl-4",
           )}
         >
           Labels

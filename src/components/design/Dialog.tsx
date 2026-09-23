@@ -16,6 +16,7 @@ import {
 } from "framer-motion";
 import clsx from "clsx";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { DURATION, EASE_IN, EASE_OUT } from "@/src/components/design/motion";
 
 export interface DialogProps {
   open: boolean;
@@ -23,6 +24,8 @@ export interface DialogProps {
   onClose: () => void;
   /** Names the dialog. Set in the display face. */
   title: ReactNode;
+  /** "price": the heading is the price (display-2), as on the cost tag. */
+  titleSize?: "title" | "price";
   /** One line under the title; becomes the dialog's description. */
   description?: ReactNode;
   children?: ReactNode;
@@ -46,9 +49,15 @@ export function Dialog({
   children,
   actions,
   width = "md",
+  titleSize = "title",
   initialFocus,
 }: DialogProps) {
-  const { spring, fade } = useMotionConfig();
+  const { reduced, fade } = useMotionConfig();
+  // Hangs in from its eyelet; leaves as a quick fade.
+  const hang: Transition = reduced
+    ? { duration: 0 }
+    : { duration: DURATION.sceneMin, ease: EASE_OUT };
+  const leave: Transition = { ...fade, ease: EASE_IN };
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -111,7 +120,7 @@ export function Dialog({
           <div
             aria-hidden
             data-testid="dialog-backdrop"
-            className="absolute inset-0 bg-[var(--color-bg-base)]/85"
+            className="absolute inset-0 bg-scrim"
             onClick={onClose}
           />
           <motion.div
@@ -122,46 +131,70 @@ export function Dialog({
             aria-describedby={description ? descriptionId : undefined}
             tabIndex={-1}
             onKeyDown={trapTab}
+            // The hole is real: the dimmed page shows through it.
+            style={{ maskImage: HOLE, WebkitMaskImage: HOLE, originY: 0 }}
             className={clsx(
               "relative flex max-h-[85dvh] w-full flex-col outline-none",
-              "border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
-              width === "md" ? "max-w-lg" : "max-w-2xl",
+              "rounded-[4px] border-[1.5px] border-ink bg-card",
+              width === "md" ? "max-w-[30rem]" : "max-w-2xl",
             )}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8, transition: fade }}
-            transition={spring}
+            initial={{ opacity: 0, y: -12, rotate: -1.5 }}
+            animate={{ opacity: 1, y: 0, rotate: 0 }}
+            exit={{ opacity: 0, transition: leave }}
+            transition={hang}
           >
-            <header className="px-panel pt-panel pb-6">
+            <Eyelet />
+            <header className="px-6 pt-12 tab:px-8">
               <h2
                 id={titleId}
-                className="font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight text-[var(--color-text-primary)]"
+                className={clsx(
+                  "font-display text-ink",
+                  titleSize === "price" ? "text-display-2" : "text-title",
+                )}
               >
                 {title}
               </h2>
               {description && (
-                <p
-                  id={descriptionId}
-                  className="mt-3 text-[var(--color-text-secondary)]"
-                >
+                <p id={descriptionId} className="mt-4 text-ink-2">
                   {description}
                 </p>
               )}
             </header>
             {Children.toArray(children).length > 0 && (
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-panel pb-panel">
+              // Notes sit under a hairline.
+              <div className="mx-6 mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-rule pt-4 text-ink-2 tab:mx-8">
                 {children}
               </div>
             )}
             {actions && (
-              <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--color-border-default)] px-panel py-4">
+              <footer className="flex flex-wrap items-center gap-x-8 gap-y-3 px-6 pt-8 pb-6 tab:px-8 tab:pb-8">
                 {actions}
               </footer>
             )}
+            {!actions && <div aria-hidden className="h-6 tab:h-8" />}
           </motion.div>
         </Frame>
       )}
     </AnimatePresence>
+  );
+}
+
+// A punched hole 5px across at the eyelet's centre (27px down). #000 is mask
+// luminance, never painted.
+const HOLE =
+  "radial-gradient(circle at 50% 27px, transparent 5px, #000 5.5px)";
+
+/** A 22px paper-deep grommet with an ink rim, and a 13px inner ring. */
+function Eyelet() {
+  return (
+    <span
+      data-eyelet
+      aria-hidden="true"
+      className="pointer-events-none absolute top-[27px] left-1/2 -translate-1/2"
+    >
+      <span className="block size-[22px] rounded-full border-[1.5px] border-ink bg-paper-deep" />
+      <span className="absolute top-1/2 left-1/2 block size-[13px] -translate-1/2 rounded-full border border-ink" />
+    </span>
   );
 }
 

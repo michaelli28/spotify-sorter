@@ -79,12 +79,40 @@ afterEach(() => {
 });
 
 describe("SiteNav", () => {
-  it.each(["/", "/setup", "/label"])("is hidden on %s", (path) => {
+  it.each(["/setup", "/label"])("is hidden on %s", (path) => {
     nav.pathname = path;
     const fetch = stubStatus();
     const { container } = render(<SiteNav />);
     expect(container).toBeEmptyDOMElement();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // Spec §3.1: the home page gets the nav too; its own routes list drops
+  // Categories and Labels.
+  it("shows on the home page, gated like everywhere else", async () => {
+    nav.pathname = "/";
+    const fetch = stubStatus();
+    render(<SiteNav />);
+    expect(screen.getByRole("navigation", { name: "Site" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/status", expect.anything());
+    for (const name of STEPS) expect(link(name)).toBeNull();
+    await answer({ ...SORTED, unsorted: 5 });
+    expect(link("Categories")).not.toBeNull();
+    expect(link("Fit")).toBeNull();
+    const marked = document.querySelectorAll('[aria-current="page"]');
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toHaveTextContent("SpotifySorter");
+  });
+
+  it("prints the record mark beside the wordmark without naming it", async () => {
+    stubStatus();
+    render(<SiteNav />);
+    await answer(SORTED);
+    const home = link("SpotifySorter")!;
+    const mark = home.querySelector("svg");
+    expect(mark).not.toBeNull();
+    expect(mark).toHaveAttribute("aria-hidden", "true");
+    expect(home).toHaveAccessibleName("SpotifySorter");
   });
 
   it("shows the wordmark as a link home, never as a heading", async () => {

@@ -4,19 +4,17 @@ import {
   type Transition,
   type Variants,
 } from "framer-motion";
+import {
+  EASE_OUT,
+  SPRING_SETTLE,
+  SPRING_SNAP,
+  STAGGER,
+  staggerDelay,
+} from "@/src/components/design/motion";
 
-export const SPRING = {
-  type: "spring",
-  stiffness: 200,
-  damping: 30,
-  mass: 0.8,
-} as const satisfies Transition;
-
-export const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
-
-// Past this index items share one delay, so a 41-card grid is fully in by
-// ~0.6s instead of ~1.7s.
-const STAGGER_CAP = 12;
+/** Legacy names for the brief §4.4 tokens: remove after pages migrate. */
+export const SPRING = SPRING_SETTLE;
+export const EASE_OUT_EXPO = EASE_OUT;
 
 export interface MotionTokens {
   reduced: boolean;
@@ -29,16 +27,22 @@ export interface MotionTokens {
   item: Variants;
   /** Delay for list item i, capped at index 12. 0 when reduced. */
   itemDelay: (i: number) => number;
+  /** SPRING_SNAP: small acknowledgements (nav underline, tab bumps). */
+  snap: Transition;
+  /** SPRING_SETTLE: things landing. */
+  settle: Transition;
 }
 
 const FULL: Readonly<MotionTokens> = {
   reduced: false,
   spring: SPRING,
-  pageEase: { duration: 0.6, ease: EASE_OUT_EXPO },
-  stagger: { staggerChildren: 0.04, delayChildren: 0.1 },
+  pageEase: { duration: 0.6, ease: EASE_OUT },
+  stagger: { staggerChildren: STAGGER.each, delayChildren: STAGGER.delay },
   fade: { duration: 0.2 },
   item: { hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } },
-  itemDelay: (i) => Math.min(Math.max(i, 0), STAGGER_CAP) * 0.04 + 0.1,
+  itemDelay: staggerDelay,
+  snap: SPRING_SNAP,
+  settle: SPRING_SETTLE,
 };
 
 const REDUCED: Readonly<MotionTokens> = {
@@ -49,6 +53,8 @@ const REDUCED: Readonly<MotionTokens> = {
   fade: { duration: 0 },
   item: { hidden: { opacity: 1, y: 0 }, visible: { opacity: 1, y: 0 } },
   itemDelay: () => 0,
+  snap: { duration: 0 },
+  settle: { duration: 0 },
 };
 
 // MotionConfig reducedMotion="user" (PageTransition) already stops transforms;

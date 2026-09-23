@@ -16,6 +16,12 @@ import {
   SPRING,
   useMotionConfig,
 } from "@/src/hooks/useMotionConfig";
+import {
+  EASE_OUT,
+  SPRING_SETTLE,
+  STAGGER,
+  staggerDelay,
+} from "@/src/components/design/motion";
 import { PageTransition } from "@/src/components/design/PageTransition";
 
 afterEach(() => {
@@ -24,24 +30,27 @@ afterEach(() => {
 });
 
 describe("useMotionConfig", () => {
-  it("uses the brief's spring and page ease", () => {
-    expect(SPRING).toMatchObject({ stiffness: 200, damping: 30, mass: 0.8 });
-    expect(EASE_OUT_EXPO).toEqual([0.16, 1, 0.3, 1]);
+  // One source of truth: the legacy names are the brief §4.4 tokens.
+  it("takes its spring, ease and stagger from the motion tokens", () => {
+    expect(SPRING).toBe(SPRING_SETTLE);
+    expect(EASE_OUT_EXPO).toBe(EASE_OUT);
     const { result } = renderHook(() => useMotionConfig());
-    expect(result.current.spring).toEqual(SPRING);
-    expect(result.current.pageEase).toEqual({
-      duration: 0.6,
-      ease: EASE_OUT_EXPO,
+    expect(result.current.spring).toEqual(SPRING_SETTLE);
+    expect(result.current.pageEase).toEqual({ duration: 0.6, ease: EASE_OUT });
+    expect(result.current.stagger).toEqual({
+      staggerChildren: STAGGER.each,
+      delayChildren: STAGGER.delay,
     });
   });
 
-  // 41 cards at 0.04s each finished ~1.7s after the page appeared.
-  it("caps the stagger at item 12", () => {
+  // 41 cards at 0.04s each once finished ~1.7s after the page appeared.
+  it("caps the stagger at item 12, on the brief's timing", () => {
     const { result } = renderHook(() => useMotionConfig());
     const { itemDelay } = result.current;
-    expect(itemDelay(0)).toBeCloseTo(0.1);
-    expect(itemDelay(1)).toBeCloseTo(0.14);
-    expect(itemDelay(12)).toBeCloseTo(0.58);
+    for (const i of [-3, 0, 1, 12, 40])
+      expect(itemDelay(i)).toBeCloseTo(staggerDelay(i));
+    expect(itemDelay(0)).toBeCloseTo(0.06);
+    expect(itemDelay(1)).toBeCloseTo(0.084);
     expect(itemDelay(40)).toBeCloseTo(itemDelay(12));
   });
 

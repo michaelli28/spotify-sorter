@@ -13,25 +13,18 @@ export interface PageShellProps {
 // The header doesn't animate: PageTransition's fade is the page's one entrance.
 export function PageShell({ children, eyebrow, title, back }: PageShellProps) {
   return (
-    <main className="mx-auto max-w-5xl px-gutter py-section">
+    <main className="page-frame pt-8 pb-section">
       {back && (
-        <ButtonLink
-          href={back.href}
-          variant="ghost"
-          size="sm"
-          className="-ml-1 mb-6"
-        >
+        <ButtonLink href={back.href} variant="ghost" size="sm" className="mb-4">
           <span aria-hidden>←</span>
           {back.label}
         </ButtonLink>
       )}
       {(eyebrow || title) && (
-        <header className="mb-section">
-          {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
+        <header className="mb-6">
+          {eyebrow && <p className="mb-2 text-ink-2">{eyebrow}</p>}
           {title && (
-            <h1 className="font-[family-name:var(--font-display)] text-display-2 tracking-tight text-[var(--color-text-primary)]">
-              {title}
-            </h1>
+            <h1 className="font-display text-display-2 text-ink">{title}</h1>
           )}
         </header>
       )}

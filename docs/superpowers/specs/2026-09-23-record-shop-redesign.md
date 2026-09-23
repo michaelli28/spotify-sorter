@@ -150,3 +150,24 @@ what they need under "Foundation requests" in their report. Run only your page's
 **Phase 4 — verification (orchestrator):** full `pnpm test`, `npx tsc --noEmit`, `npx eslint .`
 (0 errors), `npx next build`, e2e happy path, screenshot sweep of every page at 1440/390 in both
 stocks through the read-only harness (externals faked), then commits per unit and push.
+
+## 7. Amendments after the foundation review (2026-09-23)
+
+1. **Covers upload only after Apply's `done` event, one at a time.** Apply's pipeline holds a cache
+   snapshot for the whole run; a token refresh during the run (which re-saves `cache.json`) can be
+   overwritten by Apply's later writes, or overwrite Apply's new playlist ids (CONFIRMED by the F3
+   reviewer's probe with stubbed fetch, `docs/design/record-shop/foundation-data.md` "Known
+   hazard"). So the credits print each sleeve (drum A) as its playlist is written, and each sleeve's
+   registration locks in as its cover upload succeeds after `done`. The underlying refresh-vs-Apply
+   race predates this redesign; fixing it in `src/lib/spotify/client.ts` / `src/lib/pipeline/apply.ts`
+   is proposed to the owner separately, not done here.
+2. Cover route errors: `403 {error:"missing_scope"}` and `401 {error:"reconnect"}` both mean "show
+   Reconnect, no Retry"; `413 too_large`, `404` (no playlist id yet) and 5xx mean "N covers didn't
+   upload" + Retry covers.
+3. **Review page:** `useCategorySource.ts` `categoriesFrom()` must copy `temperature` (today a save
+   would clear the owner's colour), `src/lib/categories/edits.ts` must count a colour change as an
+   edit, and `/review#<id>` must open that category's sheet (PressList links there).
+4. **Top strip:** pages render their `ActionBar` from the first render (so the server prints the
+   strip's placeholder and nothing jumps); page elements stay below z-30.
+5. `<SleeveDefs />` is mounted once in `app/layout.tsx`; `@property --u` is registered in
+   `app/globals.css`.

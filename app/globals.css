@@ -1,85 +1,338 @@
 @import "tailwindcss";
 
-@theme {
-  /* Surfaces — deep coffee-brown, never pure black */
-  --color-bg-base: oklch(0.16 0.012 55);
-  --color-bg-surface: oklch(0.2 0.014 55);
-  --color-bg-elevated: oklch(0.24 0.016 55);
-  --color-border-default: oklch(0.3 0.018 55);
-  --color-border-strong: oklch(0.4 0.022 55);
+/* Daylight Record Shop. Values: docs/design/record-shop/brief.md §1–2.
+   Names and usage: docs/design/record-shop/foundation-system.md. */
 
-  /* Text — warm cream → muted amber → tertiary */
-  --color-text-primary: oklch(0.95 0.014 70);
-  --color-text-secondary: oklch(0.72 0.02 65);
-  --color-text-tertiary: oklch(0.52 0.025 60);
+/* The crate's unit, registered as a <length> so it resolves to px on
+   <CrateFigure> and a container query nested inside can't rescale it. */
+@property --u {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
 
-  /* Accent — brass/amber, the 10% */
-  --color-accent: oklch(0.74 0.14 55);
-  --color-accent-strong: oklch(0.8 0.16 55);
-  --color-accent-soft: oklch(0.62 0.1 55);
+/* Raw stock tokens. Components, inline styles and SVG graphics read these. */
+:root {
+  color-scheme: light;
 
-  /* Semantic — muted, never neon */
-  --color-success: oklch(0.66 0.12 145);
-  --color-danger: oklch(0.62 0.2 25);
-  --color-warning: oklch(0.75 0.13 80);
+  --paper: oklch(0.958 0.017 88);
+  --paper-deep: oklch(0.922 0.026 84);
+  --card: oklch(0.978 0.01 90);
+  --ink: oklch(0.285 0.075 266);
+  --ink-2: oklch(0.435 0.06 266);
+  --ink-3: oklch(0.5 0.045 266);
+  --rule: oklch(0.815 0.03 262);
+  --rule-strong: oklch(0.6 0.05 264);
+  --tint: oklch(0.905 0.03 264);
+  --accent: oklch(0.735 0.165 52);
+  --accent-press: oklch(0.69 0.17 48);
+  --success: oklch(0.5 0.085 195);
+  --danger: oklch(0.5 0.17 22);
+  --warn: oklch(0.85 0.14 88);
+  --warn-ink: oklch(0.5 0.1 72);
+  --kraft: oklch(0.845 0.045 72);
+  --hollow: oklch(0.56 0.035 70);
+  --rec-face: oklch(0.94 0.018 86);
+  --rec-edge: oklch(0.7 0.04 264);
+  --scrim: oklch(0.285 0.075 266 / 0.48);
 
-  /* Typography
-     Display falls back to system serif until Editorial New woff2 is dropped into app/fonts/
-     (see app/fonts/README.md). Body and mono use Geist (free, npm-shipped, not in the
-     banned list), with PP Neue Montreal as the intended swap-in. */
+  /* Printed objects keep their own stock at night: orange's label, the tabs. */
+  --on-accent: oklch(0.285 0.075 266);
+  --tab-stock: oklch(0.978 0.01 90);
+  --tab-ink: oklch(0.285 0.075 266);
+  --tab-pressed: oklch(0.285 0.075 266);
+  --tab-pressed-ink: oklch(0.958 0.017 88);
+  --tab-pressed-edge: oklch(0.285 0.075 266);
+
+  /* Riso drums. Orange is the action ink and never prints in a sleeve. */
+  --riso-yellow: oklch(0.915 0.175 103);
+  --riso-pink: oklch(0.68 0.215 355);
+  --riso-violet: oklch(0.62 0.13 300);
+  --riso-aqua: oklch(0.78 0.1 222);
+  --riso-red: oklch(0.64 0.185 20);
+  --riso-teal: oklch(0.555 0.09 200);
+  --riso-mblue: oklch(0.48 0.14 264);
+  --riso-fblue: oklch(0.44 0.09 264);
+  --riso-burgundy: oklch(0.48 0.1 345);
+
+  /* A tab is its temperature's ink A at 42% on tab card, mixed in OKLab
+     (an OKLCH mix toward paper swings blue through green). */
+  --t-dusk: color-mix(in oklab, var(--riso-violet) 42%, var(--tab-stock));
+  --t-charge: color-mix(in oklab, var(--riso-pink) 42%, var(--tab-stock));
+  --t-glow: color-mix(in oklab, var(--riso-yellow) 42%, var(--tab-stock));
+  --t-haze: color-mix(in oklab, var(--riso-aqua) 42%, var(--tab-stock));
+
+  /* Fibre tooth: one 180px tile, rasterised once, navy at 7%. */
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.09  0 0 0 0 0.15  0 0 0 0 0.31  0 0 0 0.07 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
+  --weight-body: 400;
+
+  /* 4pt spacing. In Tailwind these are the numeric steps 1 2 3 4 6 8 12 16 24. */
+  --space-3xs: 4px;
+  --space-2xs: 8px;
+  --space-xs: 12px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 32px;
+  --space-xl: 48px;
+  --space-2xl: 64px;
+  --space-3xl: 96px;
+  --gutter: clamp(16px, 4vw, 48px);
+  --page: 1200px;
+  /* The top strip is this tall whatever it holds (73px on phones, below). */
+  --strip-h: 93px;
+
+  --dur-press: 100ms;
+  --dur-hover: 180ms;
+  --dur-state: 240ms;
+  --dur-scene: 520ms;
+}
+
+/* Evening stock: the navy becomes the paper and cream becomes the ink. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --paper: oklch(0.235 0.068 266);
+    --paper-deep: oklch(0.2 0.058 266);
+    --card: oklch(0.275 0.074 266);
+    --tint: oklch(0.345 0.085 266);
+    --ink: oklch(0.925 0.024 86);
+    --ink-2: oklch(0.815 0.03 84);
+    --ink-3: oklch(0.735 0.032 82);
+    --rule: oklch(0.39 0.06 266);
+    --rule-strong: oklch(0.6 0.055 266);
+    --accent: oklch(0.735 0.155 52);
+    --accent-press: oklch(0.69 0.16 48);
+    --danger: oklch(0.745 0.135 24);
+    --success: oklch(0.79 0.085 192);
+    --warn: oklch(0.85 0.13 88);
+    --warn-ink: oklch(0.86 0.11 88);
+    --kraft: oklch(0.5 0.055 66);
+    --hollow: oklch(0.175 0.03 62);
+    --rec-face: oklch(0.315 0.07 266);
+    --rec-edge: oklch(0.52 0.05 266);
+    --scrim: oklch(0.13 0.04 266 / 0.66);
+
+    /* The open tab stays reversed and gains a cream keyline. */
+    --tab-pressed: oklch(0.2 0.058 266);
+    --tab-pressed-ink: oklch(0.925 0.024 86);
+    --tab-pressed-edge: oklch(0.925 0.024 86);
+
+    --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.93  0 0 0 0 0.9  0 0 0 0 0.82  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
+    --weight-body: 370;
+  }
+}
+
+@media (width < 45.0625rem) {
+  :root {
+    --strip-h: 73px;
+  }
+}
+
+/* Legacy aliases: remove after pages migrate. Only unmigrated page code reads
+   these; new code uses the utilities below. --color-accent was the old marker
+   colour (focus, progress, underlines), so it maps to ink, not orange. */
+:root {
+  --color-bg-base: var(--paper);
+  --color-bg-surface: var(--paper-deep);
+  --color-bg-elevated: var(--card);
+  --color-border-default: var(--rule);
+  --color-border-strong: var(--rule-strong);
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--ink-2);
+  --color-text-tertiary: var(--ink-3);
+  --color-accent: var(--ink);
+  --color-accent-strong: var(--ink);
+  --color-accent-soft: var(--rule-strong);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warn-ink);
+}
+
+/* Colour utilities: bg-paper, text-ink-2, border-rule, bg-t-haze, … Inline, so
+   each utility reads the raw token and follows the stock. */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-tint: var(--tint);
+  --color-accent: var(--accent);
+  --color-accent-press: var(--accent-press);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-kraft: var(--kraft);
+  --color-hollow: var(--hollow);
+  --color-rec-face: var(--rec-face);
+  --color-rec-edge: var(--rec-edge);
+  --color-scrim: var(--scrim);
+  --color-tab-stock: var(--tab-stock);
+  --color-tab-ink: var(--tab-ink);
+  --color-tab-pressed: var(--tab-pressed);
+  --color-tab-pressed-ink: var(--tab-pressed-ink);
+  --color-tab-pressed-edge: var(--tab-pressed-edge);
+  --color-t-dusk: var(--t-dusk);
+  --color-t-charge: var(--t-charge);
+  --color-t-glow: var(--t-glow);
+  --color-t-haze: var(--t-haze);
+}
+
+/* Static: always emitted, so inline styles and SVG can read them too. */
+@theme static {
+  /* next/font sets --font-caprasimo and --font-franklin on <html>; geist sets
+     --font-geist-mono. Caprasimo and Franklin can't draw kana or hanzi. */
   --font-display:
-    "Editorial New", "Iowan Old Style", "Hoefler Text", Garamond, Georgia, serif;
+    var(--font-caprasimo), "Cooper Black", Georgia, "Hiragino Sans",
+    "PingFang SC", "Noto Sans CJK JP", "Noto Sans CJK SC", sans-serif;
   --font-body:
-    var(--font-geist-sans), "PP Neue Montreal", system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+    var(--font-franklin), "Franklin Gothic Medium", "Helvetica Neue", Arial,
+    "Hiragino Sans", "PingFang SC", "Noto Sans CJK JP", "Noto Sans CJK SC",
+    sans-serif;
+  --font-mono:
+    var(--font-geist-mono), "Geist Mono", ui-monospace, "SF Mono", Menlo,
+    monospace, "Hiragino Sans", "PingFang SC", "Noto Sans CJK JP",
+    "Noto Sans CJK SC", sans-serif;
 
-  /* Roles, not sizes: px-gutter / -mx-gutter, p-panel (cards, dialogs),
-     mt-/pt-/gap-section. Everything else stays on the 4pt numeric scale. */
-  --spacing-gutter: clamp(1rem, 5vw, 3rem);
-  --spacing-panel: clamp(1.5rem, 3vw, 2.5rem);
-  --spacing-section: clamp(3rem, 8vw, 4rem);
+  /* 1.25 scale: fixed rem in the UI, fluid only for display. */
+  --text-label: 0.8rem;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0.02em;
+  --text-body: 1rem;
+  --text-body--line-height: 1.55;
+  --text-lead: 1.25rem;
+  --text-lead--line-height: 1.3;
+  --text-title: 1.563rem;
+  --text-title--line-height: 1.12;
+  --text-display-3: 1.953rem;
+  --text-display-3--line-height: 1.05;
+  --text-display-3--letter-spacing: -0.01em;
+  --text-display-2: clamp(2.441rem, 1.9rem + 1.6vw, 3.052rem);
+  --text-display-2--line-height: 1.02;
+  --text-display-2--letter-spacing: -0.01em;
+  --text-display-1: clamp(3.052rem, 1.2rem + 5vw, 5.96rem);
+  --text-display-1--line-height: 0.98;
+  --text-display-1--letter-spacing: -0.01em;
 
-  /* text-display-1: home + apply credits. text-display-2: page titles. */
-  --text-display-1: clamp(3rem, 1.6rem + 5.6vw, 4.5rem);
-  --text-display-1--line-height: 0.95;
-  --text-display-2: clamp(2.25rem, 1.8rem + 1.9vw, 3rem);
-  --text-display-2--line-height: 1.05;
+  /* Roles: px-gutter / -mx-gutter, p-panel (card and sheet insides),
+     mt-section (64–96 between sections), top-strip (clear of the top strip). */
+  --spacing-gutter: var(--gutter);
+  --spacing-panel: var(--space-md);
+  --spacing-section: clamp(64px, 8vw, 96px);
+  --spacing-strip: var(--strip-h);
 
+  /* tab: ≥721px (max-tab: is the phone layout). desk: ≥901px (list + sheet). */
+  --breakpoint-tab: 45.0625rem;
+  --breakpoint-desk: 56.3125rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Legacy alias: remove after pages migrate. */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Layered so a component's own focus/outline utilities still win. */
 @layer base {
+  /* On html, not body: the root's background paints the whole canvas, so the
+     paper runs past the end of a short page. */
   html {
-    color-scheme: dark;
+    background-color: var(--paper);
+    background-image: var(--grain);
+  }
+
+  body {
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: var(--weight-body);
+    line-height: 1.55;
+    font-kerning: normal;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Caprasimo ships 400 roman only: never fake a bold or an italic. */
+  h1,
+  h2,
+  .font-display {
+    font-synthesis: none;
+  }
+  :where(h1, h2, .font-display) em {
+    font-style: normal;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 4px;
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  /* A page with a top strip: focus scrolls clear of it (WCAG 2.2 SC 2.4.11). */
+  html:has([data-action-bar], [data-action-strip-claim]) {
+    scroll-padding-top: calc(var(--strip-h) + var(--space-2xs));
+  }
+
+  /* The bar portals in only after hydration; until then the page's claim,
+     printed by the server, holds its room so the page doesn't jump. */
+  html:has([data-action-strip-claim]) [data-action-strip-slot] {
+    min-height: var(--strip-h);
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--paper);
   }
 }
 
-@utility eyebrow {
-  font-size: var(--text-xs);
-  line-height: var(--text-xs--line-height);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-html,
-body {
-  background: var(--color-bg-base);
-  color: var(--color-text-primary);
-  font-family: var(--font-body);
-  font-feature-settings:
-    "kern" 1,
-    "liga" 1;
-  -webkit-font-smoothing: antialiased;
+/* The page's paper, for surfaces that must hide what scrolls under them. */
+@utility paper-tooth {
+  background-color: var(--paper);
+  background-image: var(--grain);
 }
 
-::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-bg-base);
+/* The 1200px column every page, the nav and the top strip share. */
+@utility page-frame {
+  width: 100%;
+  max-width: calc(var(--page) + 2 * var(--gutter));
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* Counts in a column. */
+@utility num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Catalogue numbers, stickers, the key, chart axes. Never prose. */
+@utility mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.02em;
+}
+
+/* A ruled index card: card stock whose ruling follows the 1.55 line-height. */
+@utility ruled-card {
+  background: var(--card)
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(1.55em - 1px),
+      var(--rule) calc(1.55em - 1px) 1.55em
+    )
+    0 12px / 100% 1.55em local;
+  line-height: 1.55;
 }

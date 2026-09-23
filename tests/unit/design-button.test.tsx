@@ -61,6 +61,48 @@ describe("Button", () => {
     );
   });
 
+  it("exposes quiet, icon and danger-confirm variants", () => {
+    render(
+      <>
+        <Button variant="quiet">Q</Button>
+        <Button variant="icon" aria-label="Next category (smaller)">
+          ›
+        </Button>
+        <Button variant="danger-confirm">Wipe & re-propose</Button>
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Q" })).toHaveAttribute(
+      "data-variant",
+      "quiet",
+    );
+    expect(
+      screen.getByRole("button", { name: "Next category (smaller)" }),
+    ).toHaveAttribute("data-variant", "icon");
+    expect(
+      screen.getByRole("button", { name: "Wipe & re-propose" }),
+    ).toHaveAttribute("data-variant", "danger-confirm");
+  });
+
+  // ghost keeps its name for the pages already using it; it is the brief's
+  // quiet .is-2, for lower-stakes routes.
+  it("sets ghost as the quiet button in ink-2", () => {
+    const classes = (v: Parameters<typeof buttonClass>[0]) =>
+      buttonClass(v).split(/\s+/);
+    expect(classes({ variant: "ghost" })).toContain("text-ink-2");
+    expect(classes({ variant: "quiet" })).toContain("text-ink");
+    expect(classes({ variant: "quiet" })).not.toContain("text-ink-2");
+  });
+
+  // The signature: the ink keyline is printed 4px out of register and only
+  // pulls in when the button can actually be pressed.
+  it("pulls the primary's keyline into register on hover and focus only", () => {
+    const primary = buttonClass({ variant: "primary" }).split(/\s+/);
+    expect(primary).toContain("after:translate-1");
+    expect(primary).toContain("not-disabled:hover:after:translate-0");
+    expect(primary).toContain("focus-visible:after:translate-0");
+    expect(primary).toContain("whitespace-nowrap");
+  });
+
   // A bare <button> inside a <form> submits it; the setup form wraps several.
   it("does not submit a surrounding form unless asked to", async () => {
     const onSubmit = vi.fn((e: FormEvent) => e.preventDefault());
