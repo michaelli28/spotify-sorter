@@ -1,32 +1,26 @@
-import Link from "next/link";
-import { PageShell } from "@/src/components/design/PageShell";
-import { Button } from "@/src/components/design/Button";
-import { ResumePrompt } from "@/src/components/shared/ResumePrompt";
-import { EnvSchema } from "@/src/lib/config/env";
+import { readAppStatus } from "@/src/lib/status";
+import { HomeView } from "@/src/components/home/HomeView";
 
-export default function Home() {
-  const configured = EnvSchema.safeParse(process.env).success;
-  const href = configured ? "/api/auth/login" : "/setup";
-  const label = configured ? "Connect Spotify" : "Set up Spotify";
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  // Awaited before the cache read: it makes the page request-time, so the
+  // library is never read (and frozen) at build.
+  const { error, detail } = await searchParams;
+  // The nav's own answer, so home never offers a door the nav keeps locked.
+  const status = await readAppStatus();
   return (
-    <PageShell>
-      <div className="mt-32 max-w-2xl">
-        <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-6">
-          A private record-listening room.
-        </p>
-        <h1 className="font-[family-name:var(--font-display)] text-7xl text-[var(--color-text-primary)] leading-[0.95] tracking-tight mb-12">
-          Sort your <em>library</em> into vibes that mean something.
-        </h1>
-        <p className="text-[var(--color-text-secondary)] text-lg leading-relaxed mb-16 max-w-xl">
-          SpotifySorter reads your playlists, asks Claude Haiku to invent 25-35
-          sub-genre/mood categories tuned to your taste, and writes them back as
-          new playlists in your account. Re-runs are incremental.
-        </p>
-        <Link href={href}>
-          <Button>{label}</Button>
-        </Link>
-        <ResumePrompt />
-      </div>
-    </PageShell>
+    <HomeView
+      status={status}
+      denied={
+        error === "denied"
+          ? { detail: typeof detail === "string" ? detail : null }
+          : undefined
+      }
+    />
   );
 }
