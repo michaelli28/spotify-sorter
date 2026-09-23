@@ -1,38 +1,39 @@
-"use client";
 import type { ReactNode } from "react";
-import { motion } from "framer-motion";
-import { useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { ButtonLink, type SafeHref } from "@/src/components/design/Button";
 
-export function PageShell({
-  children,
-  eyebrow,
-  title,
-}: {
+export interface PageShellProps {
   children: ReactNode;
+  /** Only for information the title doesn't already carry. */
   eyebrow?: string;
-  title?: string;
-}) {
-  const motionConfig = useMotionConfig();
+  title?: ReactNode;
+  /** A quiet way back, above the title. Label without an arrow. */
+  back?: { href: SafeHref; label: string };
+}
+
+// The header doesn't animate: PageTransition's fade is the page's one entrance.
+export function PageShell({ children, eyebrow, title, back }: PageShellProps) {
   return (
-    <main className="min-h-screen px-12 py-16 max-w-5xl mx-auto">
-      {(eyebrow || title) && (
-        <motion.header
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={motionConfig.pageEase}
-          className="mb-16"
+    <main className="mx-auto max-w-5xl px-gutter py-section">
+      {back && (
+        <ButtonLink
+          href={back.href}
+          variant="ghost"
+          size="sm"
+          className="-ml-1 mb-6"
         >
-          {eyebrow && (
-            <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-3">
-              {eyebrow}
-            </div>
-          )}
+          <span aria-hidden>←</span>
+          {back.label}
+        </ButtonLink>
+      )}
+      {(eyebrow || title) && (
+        <header className="mb-section">
+          {eyebrow && <p className="eyebrow mb-3">{eyebrow}</p>}
           {title && (
-            <h1 className="font-[family-name:var(--font-display)] text-5xl text-[var(--color-text-primary)] tracking-tight">
+            <h1 className="font-[family-name:var(--font-display)] text-display-2 tracking-tight text-[var(--color-text-primary)]">
               {title}
             </h1>
           )}
-        </motion.header>
+        </header>
       )}
       {children}
     </main>

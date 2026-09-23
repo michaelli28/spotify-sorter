@@ -32,6 +32,40 @@
   --font-body:
     var(--font-geist-sans), "PP Neue Montreal", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+
+  /* Roles, not sizes: px-gutter / -mx-gutter, p-panel (cards, dialogs),
+     mt-/pt-/gap-section. Everything else stays on the 4pt numeric scale. */
+  --spacing-gutter: clamp(1rem, 5vw, 3rem);
+  --spacing-panel: clamp(1.5rem, 3vw, 2.5rem);
+  --spacing-section: clamp(3rem, 8vw, 4rem);
+
+  /* text-display-1: home + apply credits. text-display-2: page titles. */
+  --text-display-1: clamp(3rem, 1.6rem + 5.6vw, 4.5rem);
+  --text-display-1--line-height: 0.95;
+  --text-display-2: clamp(2.25rem, 1.8rem + 1.9vw, 3rem);
+  --text-display-2--line-height: 1.05;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Layered so a component's own focus/outline utilities still win. */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 4px;
+  }
+}
+
+@utility eyebrow {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
 }
 
 html,

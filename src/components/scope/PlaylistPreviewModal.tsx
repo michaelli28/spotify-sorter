@@ -1,7 +1,10 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Button } from "@/src/components/design/Button";
+import { Dialog } from "@/src/components/design/Dialog";
+import { TrackRow } from "@/src/components/design/TrackRow";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
 interface PreviewTrack {
   id: string;
@@ -14,18 +17,27 @@ export function PlaylistPreviewModal({
   playlistId,
   liked,
   title,
+  selected,
+  onToggle,
+  toggleDisabled,
   onClose,
 }: {
   open: boolean;
   playlistId?: string | null;
   liked?: boolean;
   title: string;
+  /** Whether Scan will read this source; labels the toggle. */
+  selected?: boolean;
+  /** Include / leave out without closing. No toggle without it. */
+  onToggle?: () => void;
+  /** The choice is being saved and can't change. */
+  toggleDisabled?: boolean;
   onClose: () => void;
 }) {
+  const { fade } = useMotionConfig();
   const [tracks, setTracks] = useState<PreviewTrack[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const titleId = useId();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   // Clear during render, not in the effect: an effect reset paints one frame of
   // the previous playlist's tracks under the new title before it runs. This is
@@ -35,7 +47,7 @@ export function PlaylistPreviewModal({
   if (loadedFor !== request) {
     setLoadedFor(request);
     setTracks(null);
-    setError(null);
+    setFailed(false);
   }
 
   useEffect(() => {
@@ -53,123 +65,91 @@ export function PlaylistPreviewModal({
         if (cancelled) return;
         setTracks(d.tracks);
       })
-      .catch((e) => {
+      .catch(() => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Failed to load");
+        setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [open, playlistId, liked]);
+  }, [open, playlistId, liked, attempt]);
 
-  // Escape closes. onClose is an inline arrow at the call site, so this
-  // re-subscribes each render — harmless, and dropping it from the deps would
-  // capture a stale handler.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  function retry() {
+    setFailed(false);
+    setAttempt((a) => a + 1);
+  }
 
-  // Move focus into the panel, and put it back where it came from on close —
-  // otherwise Tab walks the page behind the backdrop with nothing visible.
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
-    return () => previous?.focus();
-  }, [open]);
+  const toggleLabel = selected ? "Leave out" : "Include";
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="fixed inset-0 bg-[var(--color-bg-base)]/80 backdrop-blur-sm z-50 flex items-center justify-center px-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        >
-          <motion.div
-            className="max-w-xl w-full max-h-[80vh] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] flex flex-col"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            transition={{ type: "spring", stiffness: 200, damping: 30 }}
-            onClick={(e) => e.stopPropagation()}
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            tabIndex={-1}
-          >
-            <div className="flex items-center justify-between p-6 border-b border-[var(--color-border-default)]">
-              <div>
-                <div className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)] mb-1">
-                  Preview
-                </div>
-                <div
-                  id={titleId}
-                  className="text-xl text-[var(--color-text-primary)]"
-                >
-                  {title}
-                </div>
-                {tracks && (
-                  <div className="text-sm text-[var(--color-text-tertiary)] mt-1">
-                    {tracks.length} tracks
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-1"
-                aria-label="Close"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      width="lg"
+      title={title}
+      description={
+        tracks
+          ? `${tracks.length.toLocaleString()} ${tracks.length === 1 ? "track" : "tracks"}`
+          : undefined
+      }
+      actions={
+        <>
+          {onToggle && (
+            <Button size="sm" onClick={onToggle} disabled={toggleDisabled}>
+              <motion.span
+                key={toggleLabel}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={fade}
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              {tracks === null && !error && (
-                <p className="text-[var(--color-text-tertiary)]">Loading…</p>
-              )}
-              {error && (
-                <p className="text-[var(--color-text-secondary)]">
-                  Couldn&#39;t load tracks: {error}
-                </p>
-              )}
-              {tracks && tracks.length === 0 && (
-                <p className="text-[var(--color-text-tertiary)]">
-                  This playlist is empty.
-                </p>
-              )}
-              {tracks && tracks.length > 0 && (
-                <ul className="space-y-2">
-                  {tracks.map((t, i) => (
-                    <li
-                      key={`${t.id}-${i}`}
-                      className="flex items-baseline gap-3 text-sm"
-                    >
-                      <span className="text-[var(--color-text-tertiary)] tabular-nums w-8 text-right">
-                        {i + 1}
-                      </span>
-                      <span className="text-[var(--color-text-primary)] flex-1 truncate">
-                        {t.title}
-                      </span>
-                      <span className="text-[var(--color-text-tertiary)] truncate max-w-[40%]">
-                        {t.artist_name}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+                {toggleLabel}
+              </motion.span>
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </>
+      }
+    >
+      {/* One reserved height for loading, error and short lists, so the panel
+          doesn't leap between them; only a long list grows, to the panel's cap. */}
+      <div className="min-h-[min(55dvh,32rem)]">
+        {tracks === null && !failed && (
+          <p className="text-[var(--color-text-tertiary)]">Loading…</p>
+        )}
+        {failed && (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+            <p className="text-[var(--color-text-secondary)]">
+              Spotify didn&apos;t send this playlist.
+            </p>
+            <Button variant="ghost" size="sm" onClick={retry} className="-ml-1">
+              Try again
+            </Button>
+          </div>
+        )}
+        {tracks && tracks.length === 0 && (
+          <p className="text-[var(--color-text-tertiary)]">
+            This playlist is empty.
+          </p>
+        )}
+        {tracks && tracks.length > 0 && (
+          <motion.ol
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={fade}
+          >
+            {tracks.map((t, i) => (
+              <TrackRow
+                key={`${t.id}-${i}`}
+                index={i + 1}
+                title={t.title}
+                artist={t.artist_name}
+              />
+            ))}
+          </motion.ol>
+        )}
+      </div>
+    </Dialog>
   );
 }
