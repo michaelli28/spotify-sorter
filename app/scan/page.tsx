@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
 import { ProgressBar } from "@/src/components/scan/ProgressBar";
@@ -94,12 +95,12 @@ export default function ScanPage() {
                 : `${STAGE_LABEL[progress.stage] ?? progress.stage}… (${progress.current}/${progress.total})`}
           </motion.div>
           {error && (
-            <a
+            <Link
               href="/scope"
               className="inline-block text-sm text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
             >
               ← Change scope
-            </a>
+            </Link>
           )}
         </AnimatePresence>
       </div>

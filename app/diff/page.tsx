@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { PageShell } from "@/src/components/design/PageShell";
 import { DiffBanner } from "@/src/components/shared/DiffBanner";
 import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
@@ -35,12 +36,12 @@ export default function DiffPage() {
       <PageShell eyebrow="Couldn't compare" title="Diff failed.">
         <div className="max-w-xl space-y-6">
           <p className="text-[var(--color-text-secondary)]">{error}</p>
-          <a
+          <Link
             href="/"
             className="text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
           >
             ← Back to start
-          </a>
+          </Link>
         </div>
       </PageShell>
     );
@@ -68,12 +69,12 @@ export default function DiffPage() {
         <p className="text-[var(--color-text-secondary)] mb-8">
           No new or removed tracks since the last run.
         </p>
-        <a
+        <Link
           href="/"
           className="text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
         >
           ← Back to start
-        </a>
+        </Link>
       </PageShell>
     );
   }

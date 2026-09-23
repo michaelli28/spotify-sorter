@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
 import { Button } from "@/src/components/design/Button";
@@ -119,12 +120,12 @@ export default function ApplyPage() {
             >
               Try again
             </Button>
-            <a
+            <Link
               href="/"
               className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             >
               Back to start
-            </a>
+            </Link>
           </div>
         </div>
       </PageShell>
