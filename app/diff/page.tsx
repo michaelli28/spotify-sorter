@@ -1,94 +1,162 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { motion } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
-import { DiffBanner } from "@/src/components/shared/DiffBanner";
-import { ThinkingIndicator } from "@/src/components/shared/ThinkingIndicator";
+import { Button, ButtonLink } from "@/src/components/design/Button";
+import { ClassifyGate } from "@/src/components/shared/ClassifyGate";
+import { RemovedNote } from "@/src/components/diff/RemovedNote";
+import { WaitingTracks } from "@/src/components/diff/WaitingTracks";
+import {
+  summariseLibrary,
+  type LibraryCache,
+  type LibrarySummary,
+} from "@/src/components/diff/summary";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 
-interface DiffResponse {
-  added: string[];
-  removed: string[];
-  removed_examples: string[];
-  existing_category_count: number;
-  is_first_run: boolean;
-}
+const WAITING = "Waiting to be sorted.";
 
+type Load =
+  | { state: "loading" }
+  | { state: "failed" }
+  | { state: "mismatch" }
+  | { state: "ready"; library: LibrarySummary };
+
+// The re-run checkpoint /scan lands on. Everything here is decided by the
+// cache alone; Spotify's answer arrives later as a footnote.
 export default function DiffPage() {
   const router = useRouter();
-  const [diff, setDiff] = useState<DiffResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [load, setLoad] = useState<Load>({ state: "loading" });
 
   useEffect(() => {
-    fetch("/api/spotify/diff")
-      .then(async (r) => {
+    const ctrl = new AbortController();
+    fetch("/api/cache", { signal: ctrl.signal })
+      .then(async (r): Promise<Load> => {
+        // Written by another version: no retry will read it.
+        if (r.status === 409) return { state: "mismatch" };
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
+        const library = summariseLibrary((await r.json()) as LibraryCache);
+        return { state: "ready", library };
       })
-      .then(setDiff)
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Failed to load diff"),
-      );
-  }, []);
+      .then((next) => {
+        if (!ctrl.signal.aborted) setLoad(next);
+      })
+      .catch(() => {
+        if (!ctrl.signal.aborted) setLoad({ state: "failed" });
+      });
+    return () => ctrl.abort();
+  }, [attempt]);
 
-  if (error) {
+  // No categories yet: /review proposes them.
+  const uncategorised = load.state === "ready" && load.library.categories === 0;
+  useEffect(() => {
+    if (uncategorised) router.replace("/review");
+  }, [uncategorised, router]);
+
+  if (uncategorised) return null;
+
+  if (load.state === "loading") {
     return (
-      <PageShell eyebrow="Couldn't compare" title="Diff failed.">
-        <div className="max-w-xl space-y-6">
-          <p className="text-[var(--color-text-secondary)]">{error}</p>
-          <Link
-            href="/"
-            className="text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
-          >
-            ← Back to start
-          </Link>
-        </div>
+      <PageShell>
+        <Reading />
       </PageShell>
     );
   }
 
-  if (!diff) {
+  if (load.state === "failed") {
     return (
-      <PageShell eyebrow="Comparing" title="Diffing your library…">
-        <ThinkingIndicator
-          message="Reading current state."
-          estimateSeconds={5}
-        />
-      </PageShell>
-    );
-  }
-
-  if (diff.is_first_run || diff.existing_category_count === 0) {
-    router.replace("/review");
-    return null;
-  }
-
-  if (diff.added.length === 0 && diff.removed.length === 0) {
-    return (
-      <PageShell eyebrow="Nothing to do" title="Your library is unchanged.">
-        <p className="text-[var(--color-text-secondary)] mb-8">
-          No new or removed tracks since the last run.
-        </p>
-        <Link
-          href="/"
-          className="text-[var(--color-accent)] hover:text-[var(--color-accent-strong)] transition-colors"
+      <PageShell title="Couldn't read your library.">
+        <Button
+          className="-ml-1"
+          onClick={() => {
+            setLoad({ state: "loading" });
+            setAttempt((n) => n + 1);
+          }}
         >
-          ← Back to start
-        </Link>
+          Try again
+        </Button>
       </PageShell>
     );
   }
 
+  if (load.state === "mismatch") {
+    // The nav locks every step on a mismatch, so name the way out.
+    return (
+      <PageShell title="Couldn't read your library.">
+        <p className="max-w-xl text-[var(--color-danger)]">
+          Your library file is from another version of SpotifySorter.
+        </p>
+        <ButtonLink href="/" className="-ml-1 mt-8">
+          Home
+        </ButtonLink>
+      </PageShell>
+    );
+  }
+
+  return <Checkpoint library={load.library} />;
+}
+
+function Checkpoint({ library }: { library: LibrarySummary }) {
+  const { item, spring, itemDelay } = useMotionConfig();
+  const waiting = library.unsorted > 0;
   return (
-    <PageShell eyebrow="Re-run" title="What changed.">
-      <DiffBanner
-        added={diff.added.length}
-        removed={diff.removed.length}
-        removedExamples={diff.removed_examples}
-        existingCategoryCount={diff.existing_category_count}
-        onApplyExisting={() => router.push("/classify")}
-        onEditCategories={() => router.push("/review")}
-      />
+    <PageShell title={waiting ? WAITING : "Nothing new to sort."}>
+      <div className="max-w-xl">
+        {waiting && (
+          <motion.div
+            variants={item}
+            initial="hidden"
+            animate="visible"
+            transition={{ ...spring, delay: itemDelay(0) }}
+            className="mb-10"
+          >
+            <WaitingTracks
+              label={WAITING}
+              tracks={library.newest}
+              total={library.unsorted}
+            />
+          </motion.div>
+        )}
+        {/* Outside the list's transform, which would pin ClassifyGate's fixed
+            dialog to this box. -ml-1 cancels the buttons' px-1, so each
+            row's first label sits on the title's left edge. */}
+        <div className="-ml-1 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+          <div className="basis-full sm:basis-auto">
+            {/* /classify spends on load unless every track has a category. */}
+            {waiting ? (
+              <ClassifyGate unsorted={library.unsorted} />
+            ) : (
+              <ButtonLink href="/classify">Tune the fit</ButtonLink>
+            )}
+          </div>
+          <ButtonLink href="/review" variant="ghost">
+            Edit categories
+          </ButtonLink>
+          <ButtonLink href="/scope" variant="ghost" size="sm">
+            Change sources
+          </ButtonLink>
+        </div>
+        <div className="mt-section">
+          <RemovedNote prefix={library.prefix} applied={library.applied} />
+        </div>
+      </div>
     </PageShell>
+  );
+}
+
+// A cache read takes ~50ms; the line only appears if this one is slow (a
+// cold dev compile), so a fast read doesn't flash it.
+function Reading() {
+  const { fade } = useMotionConfig();
+  return (
+    <motion.p
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ ...fade, delay: 0.4 }}
+      className="text-[var(--color-text-secondary)]"
+    >
+      Reading your library…
+    </motion.p>
   );
 }
