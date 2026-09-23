@@ -324,14 +324,14 @@ describe("LabelApp: songs", () => {
     await userEvent.click(box("Trance"));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
-      await screen.findByText("Every song is labeled."),
+      await screen.findByText("Every song is labelled."),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     await heading("Second Song");
     expect(box("Trance")).toBeChecked();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(
-      await screen.findByText("Every song is labeled."),
+      await screen.findByText("Every song is labelled."),
     ).toBeInTheDocument();
   });
 
@@ -361,7 +361,7 @@ describe("LabelApp: songs", () => {
     await heading("Second Song");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
-      await screen.findByText("Every song is labeled."),
+      await screen.findByText("Every song is labelled."),
     ).toBeInTheDocument();
   });
 
@@ -444,7 +444,7 @@ describe("LabelApp: modes", () => {
     const answers = screen.getByRole("group", { name: /Shoegaze/ });
     await userEvent.click(within(answers).getByRole("button", { name: "No" }));
     expect(
-      await screen.findByText("Every pair is labeled."),
+      await screen.findByText("Every pair is labelled."),
     ).toBeInTheDocument();
     // The last pair stays reachable, so a mis-click can be corrected.
     expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();

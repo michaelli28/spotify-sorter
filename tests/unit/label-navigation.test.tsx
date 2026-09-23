@@ -147,7 +147,7 @@ describe("/label ways out and onward", () => {
     await heading("Third Song");
     await userEvent.click(tab("Songs"));
     expect(
-      await screen.findByText("Every song is labeled."),
+      await screen.findByText("Every song is labelled."),
     ).toBeInTheDocument();
 
     await userEvent.click(
@@ -170,7 +170,7 @@ describe("/label ways out and onward", () => {
     expect(screen.queryByRole("button", { name: /^Continue to/ })).toBeNull();
     await userEvent.click(tab("Songs"));
     expect(
-      await screen.findByText("Every song is labeled."),
+      await screen.findByText("Every song is labelled."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Continue to/ })).toBeNull();
   });

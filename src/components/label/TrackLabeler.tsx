@@ -4,8 +4,8 @@ import clsx from "clsx";
 import { Button } from "@/src/components/design/Button";
 import { Definition } from "./Definition";
 import { ErrorLine } from "./ErrorLine";
-import { FOCUS_RING } from "./focus";
 import type { LabelCategory } from "./logic";
+import { GUESSES_WELL } from "./styles";
 import type { Suggestion } from "@/src/lib/labeling/schema";
 
 export interface TrackAnswer {
@@ -110,43 +110,39 @@ export function TrackLabeler({
   return (
     <div>
       {hasSuggestions && (
-        <div className="mb-8 border-l-2 border-[var(--color-accent)] pl-4">
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            <span className="text-sm text-[var(--color-text-secondary)]">
+        <div className={clsx("mb-6", GUESSES_WELL)}>
+          <div className="flex flex-wrap items-center gap-x-6">
+            <span className="basis-full pt-1.5 text-sm text-ink-2">
               {showing
                 ? "The model's guesses \u2014 these are what you are being compared against"
                 : "Suggestions hidden for this song"}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onToggleShowing}
-              className={`text-sm underline text-[var(--color-text-secondary)] ${FOCUS_RING}`}
             >
               {showing ? "Hide" : "Show"}
-            </button>
+            </Button>
             {showing && (
               <Button
                 variant="ghost"
+                size="sm"
                 onClick={acceptSuggestions}
                 disabled={busy}
-                className={`ml-auto ${FOCUS_RING}`}
+                className="ml-auto"
               >
                 Accept suggestions
               </Button>
             )}
           </div>
           {showing && (
-            <ol className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+            <ol className="flex flex-wrap gap-x-5 gap-y-1 pb-2 max-tab:flex-col">
               {(suggestions ?? []).map((s) => (
-                <li
-                  key={s.category_id}
-                  className="text-sm text-[var(--color-text-primary)]"
-                >
+                <li key={s.category_id} className="text-sm text-ink">
                   {categories.find((c) => c.id === s.category_id)?.name ??
                     s.category_id}{" "}
-                  <span className="text-[var(--color-text-secondary)]">
-                    {s.score}
-                  </span>
+                  <span className="num text-ink-2">{s.score}</span>
                 </li>
               ))}
             </ol>
@@ -154,20 +150,21 @@ export function TrackLabeler({
         </div>
       )}
       {/* Locked while a save or bulk run is in flight: a tick made then is
-          thrown away when the song moves on. */}
+          thrown away when the song moves on. The answer sheet is card stock;
+          -mt-px tucks the first row's rule under the card's clipped edge. */}
       <fieldset
         disabled={busy}
-        className="disabled:pointer-events-none disabled:opacity-50"
+        className="min-w-0 overflow-hidden rounded-[3px] border border-rule-strong bg-card disabled:pointer-events-none disabled:opacity-50"
       >
         <legend className="sr-only">Categories</legend>
         {/* One column beside the song rail, two where the list has the page. */}
-        <ul className="grid gap-x-12 gap-y-6 md:grid-cols-2 lg:grid-cols-1">
+        <ul className="-mt-px grid px-4 tab:grid-cols-2 tab:gap-x-10 tab:px-6 desk:grid-cols-1">
           {categories.map((c) => {
             const nameId = `${uid}-${c.id}-name`;
             const defId = `${uid}-${c.id}-def`;
             return (
-              <li key={c.id}>
-                <label className="group flex cursor-pointer gap-3">
+              <li key={c.id} className="border-t border-rule">
+                <label className="group flex cursor-pointer gap-3.5 py-3.5">
                   <input
                     type="checkbox"
                     data-category-id={c.id}
@@ -175,16 +172,16 @@ export function TrackLabeler({
                     onChange={() => toggle(c.id)}
                     aria-labelledby={nameId}
                     aria-describedby={defId}
-                    className="mt-1 size-4 shrink-0 cursor-pointer accent-[var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                    className={STAMP}
                   />
-                  <span>
+                  <span className="min-w-0">
                     <span
                       id={nameId}
-                      className="block text-[var(--color-text-primary)] transition-colors duration-200 group-hover:text-[var(--color-accent-strong)]"
+                      className="block font-semibold text-ink decoration-rule-strong underline-offset-4 group-hover:underline"
                     >
                       {c.name}
                       {showing && suggested.has(c.id) && (
-                        <span className="ml-2 text-[var(--color-text-secondary)]">
+                        <span className="num ml-2 font-normal text-ink-2">
                           {suggested.get(c.id)!.score}
                         </span>
                       )}
@@ -202,22 +199,20 @@ export function TrackLabeler({
         </ul>
       </fieldset>
 
-      <div className="sticky bottom-0 mt-12 space-y-2 border-t border-[var(--color-border-default)] bg-[var(--color-bg-base)] pt-3 pb-2">
+      {/* A 12px paper band rides above the rule: a sliver of card cut
+          against the rule read as an empty field. */}
+      <div className="paper-tooth sticky bottom-0 mt-8 space-y-1 border-t-[1.5px] border-ink pt-3 pb-3 before:absolute before:inset-x-0 before:bottom-[calc(100%+1.5px)] before:h-3 before:paper-tooth">
         <ErrorLine error={error} />
         {/* No ticks alone would read as "fits none", a different answer. */}
         {prefill?.cant_judge && (
-          <p className="text-sm text-[var(--color-text-secondary)]">
-            Saved as can&apos;t judge.
-          </p>
+          <p className="text-sm text-ink-2">Saved as can&apos;t judge.</p>
         )}
         {/* What Save will record, so an empty save is never silent. */}
         {!(prefill?.cant_judge && ticked.size === 0) && (
           <p
             className={clsx(
               "truncate text-sm",
-              ticked.size === 0
-                ? "text-[var(--color-text-tertiary)]"
-                : "text-[var(--color-text-secondary)]",
+              ticked.size === 0 ? "text-ink-3" : "text-ink-2",
             )}
           >
             {ticked.size === 0
@@ -228,8 +223,10 @@ export function TrackLabeler({
                   .join(", ")}
           </p>
         )}
-        <div className="flex items-center justify-between gap-5">
-          <div className="flex items-center gap-3">
+        {/* One row from 360px; narrower, the answers wrap under Back/Next
+            and stay right. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 pt-1">
+          <div className="flex items-center gap-5">
             <Button
               variant="ghost"
               size="sm"
@@ -247,7 +244,7 @@ export function TrackLabeler({
               Next
             </Button>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="ml-auto flex items-center gap-4 tab:gap-6">
             <Button
               variant="ghost"
               disabled={busy}
@@ -263,7 +260,7 @@ export function TrackLabeler({
             >
               Can&apos;t judge
             </Button>
-            <Button
+            <Button variant="ink"
               disabled={busy}
               onClick={() =>
                 onSubmit({
@@ -282,3 +279,12 @@ export function TrackLabeler({
     </div>
   );
 }
+
+// A stamped box in ink: card inside, ink when ticked, a card-coloured check
+// cut out of it. It follows the stock, so it holds contrast on navy too.
+// scroll-mb clears the sticky Save bar (up to its wrapped, 320px height), so
+// a box tabbed to is never under it.
+const STAMP = clsx(
+  "mt-0.5 grid size-5 shrink-0 scroll-mb-48 cursor-pointer appearance-none place-content-center rounded-[2px] border-[1.5px] border-ink bg-card checked:bg-ink disabled:cursor-not-allowed",
+  "before:size-3 before:bg-card before:opacity-0 before:[clip-path:polygon(14%_44%,0_65%,50%_100%,100%_16%,80%_0%,43%_62%)] checked:before:opacity-100",
+);

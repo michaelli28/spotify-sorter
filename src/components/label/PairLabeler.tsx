@@ -3,8 +3,8 @@ import { useEffect, useId, useRef } from "react";
 import { Button } from "@/src/components/design/Button";
 import { Definition } from "./Definition";
 import { ErrorLine } from "./ErrorLine";
-import { FOCUS_RING } from "./focus";
 import type { LabelCategory } from "./logic";
+import { GUESSES_WELL } from "./styles";
 import type { PairSuggestion } from "@/src/lib/labeling/schema";
 
 export type PairAnswer = "yes" | "no" | "cant_judge";
@@ -73,36 +73,37 @@ export function PairLabeler({
   }, []);
 
   return (
-    <div className="max-w-xl border-t border-[var(--color-border-default)] pt-8 lg:border-t-0 lg:pt-0">
+    <div className="max-w-xl border-t border-rule pt-8 desk:border-t-0 desk:pt-0">
       <p
         id={nameId}
-        className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-[var(--color-text-primary)]"
+        className="font-display text-title text-balance text-ink [overflow-wrap:anywhere]"
       >
         {category.name}
       </p>
-      <Definition text={category.definition} className="mt-2" />
+      <Definition text={category.definition} className="mt-3" />
       {hasSuggestion && (
-        <div className="mt-6 border-l-2 border-[var(--color-accent)] pl-4">
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            <span className="text-sm text-[var(--color-text-secondary)]">
+        <div className={`mt-6 ${GUESSES_WELL}`}>
+          <div className="flex flex-wrap items-center gap-x-6">
+            <span className="basis-full pt-1.5 text-sm text-ink-2">
               {!showing
                 ? "The model's answer is hidden for this pair"
                 : suggestion.score === null
                   ? "The model did not rank this category for this song \u2014 it says no"
                   : `The model scored this ${suggestion.score} and says ${suggestion.verdict}`}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onToggleShowing}
-              className={`text-sm underline text-[var(--color-text-secondary)] ${FOCUS_RING}`}
             >
               {showing ? "Hide" : "Show"}
-            </button>
+            </Button>
             {showing && (
               <Button
                 variant="ghost"
+                size="sm"
                 disabled={busy}
-                className={`ml-auto ${FOCUS_RING}`}
+                className="ml-auto"
                 onClick={() =>
                   onAnswer(
                     suggestion.verdict,
@@ -122,7 +123,7 @@ export function PairLabeler({
       )}
       <ErrorLine error={error} className="mt-6" />
       {saved && (
-        <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
+        <p className="mt-6 text-sm text-ink-2">
           Saved as {ANSWERS.find((a) => a.id === saved)!.label.toLowerCase()}.
         </p>
       )}
@@ -131,27 +132,37 @@ export function PairLabeler({
       <div
         role="group"
         aria-labelledby={nameId}
-        className="mt-8 flex flex-wrap items-baseline gap-x-10"
+        className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3"
       >
-        {ANSWERS.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            disabled={busy}
-            className={a.id === "cant_judge" ? CANT_JUDGE : VERDICT}
-            onClick={() =>
-              onAnswer(
-                a.id,
-                Math.max(0, Math.round(performance.now() - shownAt.current)),
-                sawSuggestion.current || wasSeen(),
-              )
-            }
-          >
-            {a.label}
-          </button>
-        ))}
+        {ANSWERS.map((a) => {
+          const answer = () =>
+            onAnswer(
+              a.id,
+              Math.max(0, Math.round(performance.now() - shownAt.current)),
+              sawSuggestion.current || wasSeen(),
+            );
+          return a.id === "cant_judge" ? (
+            <Button
+              key={a.id}
+              variant="ghost"
+              disabled={busy}
+              onClick={answer}
+            >
+              {a.label}
+            </Button>
+          ) : (
+            <Button variant="ink"
+              key={a.id}
+              disabled={busy}
+              className="min-w-24"
+              onClick={answer}
+            >
+              {a.label}
+            </Button>
+          );
+        })}
       </div>
-      <div className="mt-8 flex items-center gap-3 border-t border-[var(--color-border-default)] pt-3">
+      <div className="mt-10 flex items-center gap-5 border-t border-rule pt-3">
         <Button
           variant="ghost"
           size="sm"
@@ -172,8 +183,3 @@ export function PairLabeler({
     </div>
   );
 }
-
-const ANSWER =
-  "inline-flex min-h-11 items-center px-1 tracking-tight transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50";
-const VERDICT = `${ANSWER} text-lg font-medium text-[var(--color-text-primary)] hover:text-[var(--color-accent)]`;
-const CANT_JUDGE = `${ANSWER} text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]`;

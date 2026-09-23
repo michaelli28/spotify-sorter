@@ -21,7 +21,7 @@ export function Definition({
     <span
       id={id}
       className={clsx(
-        "block text-sm leading-snug text-[var(--color-text-secondary)]",
+        "block max-w-[68ch] text-sm leading-snug text-pretty text-ink-2",
         className,
       )}
     >

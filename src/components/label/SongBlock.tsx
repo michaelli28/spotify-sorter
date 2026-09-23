@@ -13,22 +13,18 @@ export function SongBlock({ track }: { track: LabelTrack }) {
   }, []);
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-6">
       <div>
         <h2
           ref={titleRef}
           tabIndex={-1}
-          className="font-[family-name:var(--font-display)] text-4xl tracking-tight text-[var(--color-text-primary)] focus:outline-none"
+          className="font-display text-display-3 text-balance text-ink [overflow-wrap:anywhere] focus:outline-none"
         >
           {track.title}
         </h2>
-        <p className="mt-2 text-lg text-[var(--color-text-secondary)]">
-          {track.artist_name}
-        </p>
+        <p className="mt-3 text-lead text-ink-2">{track.artist_name}</p>
         {track.genres.length > 0 && (
-          <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-            {track.genres.join(" · ")}
-          </p>
+          <p className="mt-2 text-sm text-ink-3">{track.genres.join(" · ")}</p>
         )}
       </div>
       <iframe
@@ -37,7 +33,7 @@ export function SongBlock({ track }: { track: LabelTrack }) {
         height={80}
         loading="lazy"
         allow="encrypted-media"
-        className="block w-full max-w-xl border-0"
+        className="block w-full max-w-xl rounded-[12px] border-0"
       />
     </section>
   );

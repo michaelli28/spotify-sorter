@@ -14,8 +14,8 @@ export function ErrorLine({
 }) {
   if (!error) return null;
   return (
-    <div className={clsx("flex flex-wrap items-baseline gap-x-4", className)}>
-      <p role="alert" className="text-sm text-[var(--color-danger)]">
+    <div className={clsx("flex flex-wrap items-center gap-x-4", className)}>
+      <p role="alert" className="text-sm text-danger">
         {error}
       </p>
       {error.endsWith(RELOAD_MESSAGE) && (

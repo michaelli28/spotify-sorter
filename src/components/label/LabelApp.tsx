@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { Button, buttonClass } from "@/src/components/design/Button";
 import { useNavLock } from "@/src/components/design/NavLock";
 import { PageShell } from "@/src/components/design/PageShell";
-import { EASE_OUT_EXPO, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import type { LabelInput, LabelState } from "@/src/lib/labeling/schema";
 import { loadLabelState, postLabel } from "./api";
 import {
@@ -38,18 +38,14 @@ type Load =
   | { kind: "failed"; message: string }
   | { kind: "ready"; state: LabelState };
 
-// Which way the queue just moved: forward after Save/Next/Continue, back
-// after Back, neither after a tab switch. Only the entry motion reads it.
-type Direction = -1 | 0 | 1;
-
 // Bulk accept: null = idle, "confirm" = asking, {done,total} = running.
 type Bulk = null | "confirm" | { done: number; total: number };
 type BulkResult = { saved: number; total: number };
 
 const FINISHED: Record<Mode, string> = {
-  songs: "Every song is labeled.",
-  pairs: "Every pair is labeled.",
-  gold: "Every gold-set song is labeled.",
+  songs: "Every song is labelled.",
+  pairs: "Every pair is labelled.",
+  gold: "Every gold-set song is labelled.",
   relabel: "Every relabel is done.",
 };
 
@@ -60,7 +56,6 @@ export function LabelApp() {
   // Explicit position per mode (after Back or a save); unset = first open,
   // unlabeled item.
   const [cursor, setCursor] = useState<Partial<Record<Mode, number>>>({});
-  const [dir, setDir] = useState<Direction>(0);
   // Labels saved in this page session only, for Back. Never loaded from disk.
   const [session, setSession] = useState<Record<string, SavedAnswer>>({});
   const [pairSession, setPairSession] = useState<Record<string, PairAnswer>>(
@@ -118,8 +113,8 @@ export function LabelApp() {
       <Shell header={<HomeLink locked={false} />}>
         {load.kind === "failed" && (
           <>
-            <p className="text-[var(--color-text-secondary)]">{load.message}</p>
-            <Button className="mt-6" onClick={retry}>
+            <p className="max-w-[60ch] text-lead text-ink-2">{load.message}</p>
+            <Button variant="ink" className="mt-8" onClick={retry}>
               Try again
             </Button>
           </>
@@ -139,9 +134,8 @@ export function LabelApp() {
     (m) => m.id !== mode && openCount(itemsFor(state, m.id), now) > 0,
   );
 
-  function selectMode(m: Mode, direction: Direction) {
+  function selectMode(m: Mode) {
     setMode(m);
-    setDir(direction);
     setError(null);
     setNow(Date.now());
     // A confirm belongs to the queue it was opened on; letting it follow the
@@ -168,7 +162,6 @@ export function LabelApp() {
     }
     setLoad({ kind: "ready", state: next });
     setNow(t);
-    setDir(1);
     const after = nextIndex(itemsFor(next, mode), index, t);
     setCursor((c) => ({ ...c, [mode]: after === -1 ? undefined : after }));
   }
@@ -232,7 +225,6 @@ export function LabelApp() {
 
   function back() {
     setError(null);
-    setDir(-1);
     setCursor((c) => ({ ...c, [mode]: backTo }));
   }
 
@@ -240,7 +232,6 @@ export function LabelApp() {
   // finished line.
   function next() {
     setError(null);
-    setDir(1);
     const f = forwardIndex(items, index, now);
     setCursor((c) => ({ ...c, [mode]: f === -1 ? undefined : f }));
   }
@@ -248,14 +239,14 @@ export function LabelApp() {
   let body: React.ReactNode;
   if (index === -1) {
     body = (
-      <Item itemKey={`${mode}:end`} dir={dir}>
-        <p className="font-[family-name:var(--font-display)] text-2xl tracking-tight text-[var(--color-text-secondary)]">
+      <Item itemKey={`${mode}:end`}>
+        <p className="max-w-[24ch] font-display text-display-3 text-balance text-ink">
           {emptyLine(state, mode)}
         </p>
         {(continueTo || backTo !== -1) && (
-          <div className="mt-8 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+          <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-3">
             {continueTo && (
-              <Button onClick={() => selectMode(continueTo.id, 1)}>
+              <Button variant="ink" onClick={() => selectMode(continueTo.id)}>
                 Continue to {continueTo.label}
               </Button>
             )}
@@ -272,7 +263,7 @@ export function LabelApp() {
     const pair = state.pairs[index]!;
     const category = state.categories.find((c) => c.id === pair.category_id);
     body = (
-      <Item itemKey={`pairs:${pair.pair_id}`} dir={dir} className={RAIL_GRID}>
+      <Item itemKey={`pairs:${pair.pair_id}`} className={RAIL_GRID}>
         <div className={RAIL}>
           <SongBlock track={pair} />
         </div>
@@ -314,9 +305,7 @@ export function LabelApp() {
             }
           />
         ) : (
-          <p className="text-[var(--color-text-secondary)]">
-            Unknown category {pair.category_id}.
-          </p>
+          <p className="text-ink-2">Unknown category {pair.category_id}.</p>
         )}
       </Item>
     );
@@ -332,7 +321,7 @@ export function LabelApp() {
     )[index]!;
     const key = `${mode}:${track.track_id}`;
     body = (
-      <Item itemKey={key} dir={dir} className={RAIL_GRID}>
+      <Item itemKey={key} className={RAIL_GRID}>
         <div className={RAIL}>
           <SongBlock track={track} />
         </div>
@@ -381,10 +370,11 @@ export function LabelApp() {
   const header = (
     <>
       <HomeLink locked={running} />
-      {/* Under md the tabs take their own row, below Home and the count. */}
+      {/* Phones: the tabs take their own row, below Home and the count,
+          padded tighter so four with counts fit from 360px; narrower wraps. */}
       <nav
         aria-label="Label mode"
-        className="order-3 flex w-full flex-wrap items-baseline gap-x-5 md:order-none md:w-auto md:flex-nowrap md:gap-x-7"
+        className="order-3 -mx-1.5 flex w-[calc(100%+12px)] flex-wrap justify-between tab:order-none tab:mx-0 tab:w-auto tab:flex-nowrap tab:justify-start tab:gap-2 tab:border-l tab:border-rule-strong tab:pl-4"
       >
         {MODES.map((m) => (
           <ModeTab
@@ -393,12 +383,12 @@ export function LabelApp() {
             active={m.id === mode}
             open={openCount(itemsFor(state, m.id), now)}
             disabled={running}
-            onSelect={() => selectMode(m.id, 0)}
+            onSelect={() => selectMode(m.id)}
           />
         ))}
       </nav>
       {items.length > 0 && (
-        <span className="ml-auto font-[family-name:var(--font-mono)] text-sm tabular-nums text-[var(--color-text-tertiary)]">
+        <span className="mono num ml-auto text-ink-3">
           {doneCount} / {items.length}
         </span>
       )}
@@ -431,10 +421,10 @@ export function LabelApp() {
   );
 }
 
-// The song holds still beside a long category list from lg up.
+// The song holds still beside a long category list from desk up.
 const RAIL_GRID =
-  "grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-x-16";
-const RAIL = "lg:sticky lg:top-12";
+  "grid gap-10 desk:grid-cols-[minmax(0,19rem)_minmax(0,1fr)] desk:items-start desk:gap-x-16";
+const RAIL = "desk:sticky desk:top-8";
 
 function Shell({
   header,
@@ -448,9 +438,10 @@ function Shell({
   return (
     <PageShell>
       <h1 className="sr-only">Blind labels</h1>
-      <div className="mb-12 md:mb-16">
-        {/* gap-y: under md, Home's 44px tap target clears the tabs' row. */}
-        <header className="flex flex-wrap items-baseline gap-x-8 gap-y-1.5 md:flex-nowrap">
+      <div className="mb-10 tab:mb-14">
+        {/* The site nav is hidden here, so this row is the masthead and
+            closes with the nav's own 1.5px ink rule. */}
+        <header className="flex flex-wrap items-center border-b-[1.5px] border-ink pb-3 tab:flex-nowrap">
           {header}
         </header>
         {below}
@@ -463,18 +454,22 @@ function Shell({
 // The page's only way out (the site nav is hidden here). Inert while a bulk
 // run writes, so leaving can't strand it out of sight.
 function HomeLink({ locked }: { locked: boolean }) {
+  // Underlined and set off by the tabs' rule, so it never reads as a fifth
+  // queue. The ghost recipe is already a 44px target.
   const className = buttonClass({
     variant: "ghost",
     size: "sm",
-    // Wider than a tab gap, so it never reads as a fifth queue. The ::before
-    // makes a 44px tap target without growing the row.
-    className:
-      "-ml-1 md:mr-8 before:absolute before:inset-x-0 before:-inset-y-1.5",
+    className: "mr-auto tab:mr-6",
   });
+  // One child, so the flex gap can't split the underline; the arrow is an
+  // inline-block, which an ancestor's underline doesn't reach.
   const content = (
-    <>
-      <span aria-hidden>←</span>Home
-    </>
+    <span>
+      <span aria-hidden className="mr-1.5 inline-block">
+        ←
+      </span>
+      Home
+    </span>
   );
   if (locked)
     return (
@@ -506,7 +501,8 @@ function ModeTab({
   disabled: boolean;
   onSelect: () => void;
 }) {
-  const { spring } = useMotionConfig();
+  // The site nav's step language: current in ink with a 2px rule under it
+  // (static here: nothing moves on this page), open work in ink-2, none ink-3.
   return (
     <button
       type="button"
@@ -514,30 +510,28 @@ function ModeTab({
       disabled={disabled}
       onClick={onSelect}
       className={clsx(
-        "relative inline-flex min-h-11 items-center whitespace-nowrap text-sm tracking-tight transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex min-h-11 items-center whitespace-nowrap px-1.5 font-medium transition-colors duration-180 ease-out disabled:cursor-not-allowed disabled:opacity-50 tab:px-2.5",
         active
-          ? "text-[var(--color-text-primary)]"
+          ? "text-ink"
           : open > 0
-            ? "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]",
+            ? "text-ink-2 hover:text-ink"
+            : "text-ink-3 hover:text-ink-2",
       )}
     >
-      {label}
+      <span className="relative">
+        {label}
+        {active && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-0 -bottom-[3px] h-0.5 bg-current"
+          />
+        )}
+      </span>
       {/* Open work on another queue; the tab's name stays exactly its label. */}
       {!active && open > 0 && (
-        <span
-          aria-hidden="true"
-          className="ml-1.5 font-[family-name:var(--font-mono)] text-xs tabular-nums text-[var(--color-text-tertiary)]"
-        >
+        <span aria-hidden="true" className="mono num ml-1.5 text-ink-3">
           {open}
         </span>
-      )}
-      {active && (
-        <motion.span
-          layoutId="label-mode-underline"
-          transition={spring}
-          className="absolute inset-x-0 bottom-2 h-px bg-[var(--color-text-primary)]"
-        />
       )}
     </button>
   );
@@ -587,12 +581,9 @@ function BulkRow({
       ? `Saved ${result.saved} of ${result.total}.`
       : "";
   return (
-    <div className="flex flex-wrap items-baseline gap-x-6 text-sm md:justify-end">
+    <div className="mt-1 flex flex-wrap items-center gap-x-6 text-sm tab:justify-end">
       {/* One live region across phases, so the outcome is announced too. */}
-      <p
-        role="status"
-        className="py-1.5 tabular-nums text-[var(--color-text-secondary)] empty:sr-only"
-      >
+      <p role="status" className="num py-1.5 text-ink-2 empty:sr-only">
         {status}
       </p>
       <motion.div
@@ -601,8 +592,8 @@ function BulkRow({
         animate={{ opacity: 1 }}
         transition={fade}
         className={clsx(
-          "flex flex-wrap items-baseline gap-x-6 empty:hidden",
-          phase === "confirm" && "w-full md:justify-end",
+          "flex flex-wrap items-center gap-x-6 empty:hidden",
+          phase === "confirm" && "w-full tab:justify-end",
         )}
       >
         {phase === "idle" && remaining > 0 && (
@@ -610,7 +601,6 @@ function BulkRow({
             ref={askRef}
             variant="ghost"
             size="sm"
-            className="-ml-1"
             onClick={onAsk}
           >
             Accept all suggestions
@@ -618,15 +608,15 @@ function BulkRow({
         )}
         {phase === "confirm" && (
           <>
-            {/* Its own row at every width: inline, Accept all landed under
-                the pointer that opened it, and a double-click wrote them all. */}
-            <p className="w-full py-1.5 text-[var(--color-text-secondary)] md:text-right">
+            {/* Its own row at every width, at least as tall as the 44px
+                opener it replaces: shorter, Accept all landed inside the
+                opener's box and a double-click wrote them all. */}
+            <p className="num w-full py-3.5 text-ink tab:text-right">
               Save the model&apos;s answer for the {remaining} remaining?
             </p>
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-1"
               onClick={onAccept}
             >
               Accept all
@@ -657,28 +647,25 @@ function BulkRow({
   );
 }
 
-// Entry only, keyed per item and never wrapped in AnimatePresence. Under 300ms
-// on purpose: elapsed_ms is timed from the labeler's mount.
+// Entry only, keyed per item and never wrapped in AnimatePresence. Opacity
+// only (the quietest page: nothing travels beside a blind judgement), and
+// under 300ms on purpose: elapsed_ms is timed from the labeler's mount.
 function Item({
   itemKey,
-  dir,
   className,
   children,
 }: {
   itemKey: string;
-  dir: Direction;
   className?: string;
   children: React.ReactNode;
 }) {
-  const { reduced } = useMotionConfig();
+  const { fade } = useMotionConfig();
   return (
     <motion.div
       key={itemKey}
-      initial={{ opacity: 0, x: reduced ? 0 : dir * 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={
-        reduced ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT_EXPO }
-      }
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={fade}
       className={className}
     >
       {children}
