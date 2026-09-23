@@ -1,33 +1,101 @@
 "use client";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useIsPresent,
+  type Transition,
+  type Variants,
+} from "framer-motion";
 import { Button } from "@/src/components/design/Button";
 import { PageShell } from "@/src/components/design/PageShell";
+import { EASE_OUT_EXPO, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { SetupIndex } from "@/src/components/setup/SetupIndex";
 import { DevAppInstructions } from "@/src/components/setup/DevAppInstructions";
 import { ClientIdStep } from "@/src/components/setup/ClientIdStep";
 import { AnthropicKeyStep } from "@/src/components/setup/AnthropicKeyStep";
 import { PrefixStep } from "@/src/components/setup/PrefixStep";
+import {
+  fieldProblem,
+  keyVerdict,
+  type SetupValues,
+  type StepId,
+} from "@/src/components/setup/checks";
 
-type State = {
-  clientId: string;
-  anthropicKey: string;
-  prefix: string;
-  error?: string;
+const STEPS: readonly { id: StepId; label: string; title: string }[] = [
+  { id: "intro", label: "Spotify app", title: "Make a Spotify app." },
+  { id: "client", label: "Client ID", title: "Paste its Client ID." },
+  { id: "anthropic", label: "Anthropic key", title: "Paste an Anthropic key." },
+  { id: "prefix", label: "Prefix", title: "Prefix the new playlists." },
+];
+const LABELS = STEPS.map((s) => s.label);
+
+// field: the value is wrong, so the field is marked invalid.
+// form: a request failed; the value may be fine.
+type Problem = { field?: string; form?: string };
+type Busy = false | "checking" | "saving";
+
+const SHIFT = 16;
+const swap: Variants = {
+  enter: (dir: number) => ({ opacity: 0, x: dir * SHIFT }),
+  center: { opacity: 1, x: 0 },
+  exit: (dir: number) => ({ opacity: 0, x: dir * -SHIFT }),
 };
 
-const STEPS = ["intro", "client", "anthropic", "prefix"] as const;
-type Step = (typeof STEPS)[number];
+// The leaving step keeps its space out of the flow (popLayout) and out of
+// reach: no clicks, no focus, not read out alongside the new one.
+function StepSection({
+  ref,
+  dir,
+  transition,
+  children,
+}: {
+  ref?: Ref<HTMLElement>;
+  dir: number;
+  transition: { enter: Transition; exit: Transition };
+  children: ReactNode;
+}) {
+  const present = useIsPresent();
+  return (
+    <motion.section
+      ref={ref}
+      custom={dir}
+      variants={swap}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={present ? transition.enter : transition.exit}
+      inert={!present}
+      aria-hidden={present ? undefined : true}
+    >
+      {children}
+    </motion.section>
+  );
+}
 
 export default function SetupPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("intro");
-  const [state, setState] = useState<State>({
+  const { reduced, spring } = useMotionConfig();
+  const [idx, setIdx] = useState(0);
+  // +1 forward, -1 back: the steps slide the way you are going.
+  const [dir, setDir] = useState(1);
+  const [values, setValues] = useState<SetupValues>({
     clientId: "",
     anthropicKey: "",
     prefix: "✨",
   });
-  const [validating, setValidating] = useState(false);
+  const [problem, setProblem] = useState<Problem>({});
+  const [busy, setBusy] = useState<Busy>(false);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const step = STEPS[idx];
 
   useEffect(() => {
     fetch("/api/config")
@@ -35,100 +103,175 @@ export default function SetupPage() {
       .then((d: { configured: boolean }) => {
         if (d.configured) router.replace("/");
       })
+      // Unknown means stay: this page is where an unconfigured app belongs.
       .catch(() => {});
   }, [router]);
 
-  const idx = STEPS.indexOf(step);
-  const canAdvance = (() => {
-    if (step === "intro") return true;
-    if (step === "client") return state.clientId.length >= 20;
-    if (step === "anthropic") return state.anthropicKey.startsWith("sk-ant-");
-    if (step === "prefix") return state.prefix.length > 0;
-    return false;
-  })();
+  function go(to: number) {
+    setDir(to > idx ? 1 : -1);
+    setIdx(to);
+    setProblem({});
+  }
 
-  async function advance() {
-    if (step === "anthropic") {
-      setValidating(true);
+  function edit(field: keyof SetupValues, value: string) {
+    setValues((v) => ({ ...v, [field]: value }));
+    setProblem({});
+  }
+
+  function back() {
+    // Back disappears on the first step, which has no field to take focus.
+    if (idx === 1) primaryRef.current?.focus();
+    go(idx - 1);
+  }
+
+  async function keyIsGood(): Promise<boolean> {
+    setBusy("checking");
+    setProblem({});
+    try {
       const r = await fetch("/api/llm/validate", {
         method: "POST",
-        body: JSON.stringify({ apiKey: state.anthropicKey }),
+        body: JSON.stringify({ apiKey: values.anthropicKey }),
         headers: { "content-type": "application/json" },
       });
-      const json = (await r.json()) as { ok: boolean };
-      setValidating(false);
-      if (!json.ok) {
-        setState({
-          ...state,
-          error:
-            "That key was rejected. Double-check it on console.anthropic.com.",
-        });
-        return;
-      }
+      const verdict = keyVerdict(
+        (await r.json()) as { ok: boolean; message?: string },
+      );
+      if (verdict === "rejected")
+        setProblem({ field: "Anthropic rejected that key." });
+      if (verdict === "unchecked")
+        setProblem({ form: "Couldn't check the key with Anthropic." });
+      return verdict === "ok";
+    } catch {
+      setProblem({ form: "Couldn't check the key with Anthropic." });
+      return false;
+    } finally {
+      setBusy(false);
     }
-    if (step === "prefix") {
+  }
+
+  async function save() {
+    setBusy("saving");
+    setProblem({});
+    let saved = false;
+    try {
       const r = await fetch("/api/config", {
         method: "POST",
         body: JSON.stringify({
-          spotify_client_id: state.clientId,
-          anthropic_api_key: state.anthropicKey,
-          prefix: state.prefix,
+          spotify_client_id: values.clientId,
+          anthropic_api_key: values.anthropicKey,
+          prefix: values.prefix.trim(),
         }),
         headers: { "content-type": "application/json" },
       });
-      if (r.ok) router.push("/");
-      return;
+      saved = r.ok;
+      if (!saved) setProblem({ form: "Couldn't save the settings." });
+    } catch {
+      setProblem({ form: "Couldn't reach the app to save." });
+    } finally {
+      // Stays locked on success so Save can't fire twice while home loads.
+      if (!saved) setBusy(false);
     }
-    setStep(STEPS[idx + 1]);
+    // Replace, so Back from home doesn't reopen a finished setup.
+    if (saved) router.replace("/");
   }
 
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    const field = fieldProblem(step.id, values);
+    if (field) {
+      setProblem({ field });
+      return;
+    }
+    if (step.id === "prefix") return save();
+    if (step.id === "anthropic" && !(await keyIsGood())) return;
+    go(idx + 1);
+  }
+
+  const fieldProps = { error: problem.field, busy: busy !== false };
+  const primaryLabel =
+    busy === "checking"
+      ? "Checking…"
+      : busy === "saving"
+        ? "Saving…"
+        : step.id === "prefix"
+          ? "Save"
+          : step.id === "anthropic" && problem.form
+            ? "Try again"
+            : "Continue";
+  const transition = reduced
+    ? { enter: { duration: 0 }, exit: { duration: 0 } }
+    : {
+        enter: { x: spring, opacity: { duration: 0.3, ease: EASE_OUT_EXPO } },
+        exit: { duration: 0.15, ease: EASE_OUT_EXPO },
+      };
+
   return (
-    <PageShell
-      eyebrow={`Setup — step ${idx + 1} of ${STEPS.length}`}
-      title="Let's get connected."
-    >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-10"
-        >
-          {step === "intro" && <DevAppInstructions />}
-          {step === "client" && (
-            <ClientIdStep
-              value={state.clientId}
-              onChange={(v) => setState({ ...state, clientId: v })}
-            />
-          )}
-          {step === "anthropic" && (
-            <AnthropicKeyStep
-              value={state.anthropicKey}
-              onChange={(v) =>
-                setState({ ...state, anthropicKey: v, error: undefined })
-              }
-              error={state.error}
-            />
-          )}
-          {step === "prefix" && (
-            <PrefixStep
-              value={state.prefix}
-              onChange={(v) => setState({ ...state, prefix: v })}
-            />
-          )}
-          <div className="pt-6">
-            <Button onClick={advance} disabled={!canAdvance || validating}>
-              {validating
-                ? "Verifying…"
-                : step === "prefix"
-                  ? "Save and continue"
-                  : "Continue"}
-            </Button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+    <PageShell>
+      <div className="grid gap-8 lg:grid-cols-[11rem_minmax(0,36rem)] lg:gap-x-20">
+        <SetupIndex steps={LABELS} current={idx} />
+        <form noValidate onSubmit={submit} className="relative min-w-0">
+          <AnimatePresence mode="popLayout" initial={false} custom={dir}>
+            <StepSection key={step.id} dir={dir} transition={transition}>
+              <h1 className="mb-10 text-balance font-[family-name:var(--font-display)] text-display-2 tracking-tight text-[var(--color-text-primary)]">
+                {step.title}
+              </h1>
+              {step.id === "intro" && <DevAppInstructions />}
+              {step.id === "client" && (
+                <ClientIdStep
+                  value={values.clientId}
+                  onChange={(v) => edit("clientId", v)}
+                  {...fieldProps}
+                />
+              )}
+              {step.id === "anthropic" && (
+                <AnthropicKeyStep
+                  value={values.anthropicKey}
+                  onChange={(v) => edit("anthropicKey", v)}
+                  {...fieldProps}
+                />
+              )}
+              {step.id === "prefix" && (
+                <PrefixStep
+                  value={values.prefix}
+                  onChange={(v) => edit("prefix", v)}
+                  {...fieldProps}
+                />
+              )}
+            </StepSection>
+          </AnimatePresence>
+          {/* Outside the swap, so the buttons glide to their new place
+              instead of vanishing with the old step. */}
+          <motion.div
+            layout={reduced ? false : "position"}
+            transition={spring}
+            className="mt-12"
+          >
+            <div className="-ml-1 flex items-baseline gap-8">
+              <Button ref={primaryRef} type="submit" disabled={busy !== false}>
+                {primaryLabel}
+              </Button>
+              {idx > 0 && (
+                <Button
+                  variant="ghost"
+                  onClick={back}
+                  disabled={busy !== false}
+                >
+                  Back
+                </Button>
+              )}
+            </div>
+            {problem.form && (
+              <p
+                role="alert"
+                className="mt-4 px-1 text-sm text-[var(--color-danger)]"
+              >
+                {problem.form}
+              </p>
+            )}
+          </motion.div>
+        </form>
+      </div>
     </PageShell>
   );
 }
