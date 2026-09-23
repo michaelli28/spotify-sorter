@@ -27,7 +27,7 @@ export function ClientIdStep({
       autoCorrect="off"
       spellCheck={false}
       // Sized to a 32-character ID, so the field hints at what fits.
-      className="max-w-[36ch] font-[family-name:var(--font-mono)]"
+      className="max-w-[36ch] font-mono"
     />
   );
 }

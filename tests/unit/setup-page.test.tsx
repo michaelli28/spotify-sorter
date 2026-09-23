@@ -6,6 +6,15 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import SetupPage from "@/app/setup/page";
+import {
+  NavLockProvider,
+  useNavLockState,
+} from "@/src/components/design/NavLock";
+
+function LockProbe() {
+  const { locked } = useNavLockState();
+  return <output data-testid="nav-lock">{locked ? "locked" : "open"}</output>;
+}
 
 const CLIENT_ID = "0123456789abcdef0123456789abcdef";
 const KEY = "sk-ant-api03-test-key";
@@ -74,6 +83,22 @@ async function toPrefixStep(user: UserEvent) {
   return screen.getByRole("textbox", { name: "Playlist prefix" });
 }
 
+// For a page rendered inside a provider: walks it from card 01 to 04.
+async function walkToPrefix(user: UserEvent) {
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  await user.click(
+    await screen.findByRole("textbox", { name: "Spotify Client ID" }),
+  );
+  await user.paste(CLIENT_ID);
+  await user.keyboard("{Enter}");
+  await user.click(await screen.findByLabelText("Anthropic API key"));
+  await user.paste(KEY);
+  await user.keyboard("{Enter}");
+  await heading("Prefix the new playlists.");
+}
+
+const tabs = () => within(screen.getByRole("list", { name: "Setup" }));
+
 afterEach(() => {
   vi.unstubAllGlobals();
   router.push.mockReset();
@@ -113,6 +138,24 @@ describe("/setup", () => {
     ).toBeInTheDocument();
   });
 
+  it("says how to copy by hand when the clipboard refuses", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    const write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(
+      await screen.findByText(
+        "Couldn't copy. Select the address and copy it by hand.",
+      ),
+    ).toHaveAttribute("role", "status");
+    // Copy stays a retry.
+    expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
+    write.mockRestore();
+  });
+
   it("submits on Enter and refuses a short Client ID without leaving the step", async () => {
     const fetchMock = stubFetch();
     const user = userEvent.setup();
@@ -137,6 +180,8 @@ describe("/setup", () => {
     expect(field).toHaveValue(CLIENT_ID);
     await user.keyboard("{Enter}");
     await heading("Paste an Anthropic key.");
+    // The old card face leaves at once: never two titles on the card.
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     await waitFor(() =>
       expect(screen.getByLabelText("Anthropic API key")).toHaveFocus(),
     );
@@ -158,6 +203,49 @@ describe("/setup", () => {
     const user = userEvent.setup();
     await toClientStep(user);
     await user.click(screen.getByRole("button", { name: "Back" }));
+    await heading("Make a Spotify app.");
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveFocus();
+  });
+
+  it("goes back to an earlier card from its tab, never forward", async () => {
+    stubFetch({ "POST /api/llm/validate": reply({ ok: true }) });
+    const user = userEvent.setup();
+    const prefix = await toPrefixStep(user);
+    await user.clear(prefix);
+    await user.type(prefix, "AI");
+    // The current card's tab is not a control.
+    expect(
+      tabs()
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["01 Spotify app", "02 Client ID", "03 Anthropic key"]);
+
+    await user.click(tabs().getByRole("button", { name: "02 Client ID" }));
+    await heading("Paste its Client ID.");
+    const id = screen.getByRole("textbox", { name: "Spotify Client ID" });
+    expect(id).toHaveValue(CLIENT_ID);
+    await waitFor(() => expect(id).toHaveFocus());
+    // Cards not reached from here can't be skipped to.
+    expect(
+      tabs()
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["01 Spotify app"]);
+
+    await user.keyboard("{Enter}");
+    await heading("Paste an Anthropic key.");
+    expect(screen.getByLabelText("Anthropic API key")).toHaveValue(KEY);
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByRole("textbox", { name: "Playlist prefix" }),
+    ).toHaveValue("AI");
+  });
+
+  it("puts focus on Continue when a tab goes back to the first card", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    await toKeyStep(user);
+    await user.click(tabs().getByRole("button", { name: "01 Spotify app" }));
     await heading("Make a Spotify app.");
     expect(screen.getByRole("button", { name: "Continue" })).toHaveFocus();
   });
@@ -185,7 +273,19 @@ describe("/setup", () => {
     await user.keyboard("{Enter}");
 
     expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
+    // Busy, not merely disabled: the label stays legible while it checks.
+    expect(screen.getByRole("button", { name: "Checking…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(
+      tabs().getByRole("button", { name: "02 Client ID" }),
+    ).toBeDisabled();
+    expect(screen.getByText("Checking the key with Anthropic…")).toHaveAttribute(
+      "role",
+      "status",
+    );
     expect(field).toHaveAttribute("readonly");
     await user.keyboard("{Enter}");
     const validates = calls(fetchMock, "POST /api/llm/validate");
@@ -198,6 +298,73 @@ describe("/setup", () => {
       json: async () => ({ ok: true }),
     });
     expect(await heading("Prefix the new playlists.")).toBeInTheDocument();
+  });
+
+  it("holds the nav lock while it checks the key and while it saves", async () => {
+    const check = deferred();
+    const store = deferred();
+    stubFetch({
+      "POST /api/llm/validate": () => check.promise,
+      "POST /api/config": () => store.promise,
+    });
+    const user = userEvent.setup();
+    render(
+      <NavLockProvider>
+        <LockProbe />
+        <SetupPage />
+      </NavLockProvider>,
+    );
+    const lock = screen.getByTestId("nav-lock");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    const id = await screen.findByRole("textbox", {
+      name: "Spotify Client ID",
+    });
+    await user.click(id);
+    await user.paste(CLIENT_ID);
+    await user.keyboard("{Enter}");
+    const key = await screen.findByLabelText("Anthropic API key");
+    expect(lock).toHaveTextContent("open");
+
+    await user.click(key);
+    await user.paste(KEY);
+    await user.keyboard("{Enter}");
+    expect(lock).toHaveTextContent("locked");
+    check.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    await heading("Prefix the new playlists.");
+    // The lock lets go in an effect, a commit after the new card shows.
+    await waitFor(() => expect(lock).toHaveTextContent("open"));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(lock).toHaveTextContent("locked");
+    store.resolve({ ok: false, status: 400, json: async () => ({}) });
+    await screen.findByText("Couldn't save the settings.");
+    await waitFor(() => expect(lock).toHaveTextContent("open"));
+  });
+
+  it("keeps the nav lock after a save lands, until the page leaves", async () => {
+    stubFetch({
+      "POST /api/llm/validate": reply({ ok: true }),
+      "POST /api/config": reply({ ok: true }),
+    });
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <NavLockProvider>
+        <LockProbe />
+        <SetupPage />
+      </NavLockProvider>,
+    );
+    await walkToPrefix(user);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+    const lock = screen.getByTestId("nav-lock");
+    expect(lock).toHaveTextContent("locked");
+    // Home replaces the page.
+    rerender(
+      <NavLockProvider>
+        <LockProbe />
+      </NavLockProvider>,
+    );
+    await waitFor(() => expect(lock).toHaveTextContent("open"));
   });
 
   it("says the key was rejected only when Anthropic rejected it", async () => {
@@ -312,10 +479,13 @@ describe("/setup", () => {
     const field = await toPrefixStep(user);
     expect(field).toHaveAttribute("maxLength", "8");
     expect(field).toHaveValue("✨");
-    expect(screen.getByText("✨ Aesthetic Rap")).toBeInTheDocument();
+    const preview = within(screen.getByRole("figure", { name: "In Spotify" }));
+    expect(preview.getByText("✨ Bedroom Pop Intimacy")).not.toHaveAttribute(
+      "data-empty",
+    );
     await user.clear(field);
     await user.type(field, "AI");
-    expect(screen.getByText("AI Aesthetic Rap")).toBeInTheDocument();
+    expect(screen.getByText("AI Bedroom Pop Intimacy")).toBeInTheDocument();
     expect(screen.queryByText(/later in Settings/i)).toBeNull();
     expect(screen.queryByText(/Liked Songs/)).toBeNull();
   });
@@ -327,6 +497,10 @@ describe("/setup", () => {
     const user = userEvent.setup();
     const field = await toPrefixStep(user);
     await user.clear(field);
+    // No prefix yet: the preview prints a blank tab, not a saveable name.
+    expect(screen.getByText("Bedroom Pop Intimacy")).toHaveAttribute(
+      "data-empty",
+    );
     await user.type(field, "   {Enter}");
     expect(field).toHaveAccessibleDescription("Pick at least one character.");
     expect(calls(fetchMock, "POST /api/config")).toHaveLength(0);

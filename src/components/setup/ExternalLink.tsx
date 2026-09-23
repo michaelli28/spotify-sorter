@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// Cream, not brass: the step's primary button is the one accent in view.
+// Ink, not orange: the card's primary is the one accent in view.
 export function ExternalLink({
   href,
   children,
@@ -13,7 +13,7 @@ export function ExternalLink({
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="text-[var(--color-text-primary)] underline decoration-[var(--color-border-strong)] underline-offset-4 transition-colors duration-200 hover:decoration-[var(--color-text-primary)]"
+      className="font-medium text-ink underline decoration-rule-strong decoration-[1.5px] underline-offset-4 transition-[text-decoration-color] duration-180 ease-out hover:decoration-ink"
     >
       {children}
       <span aria-hidden> ↗</span>

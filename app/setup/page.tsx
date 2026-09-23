@@ -1,23 +1,11 @@
 "use client";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AnimatePresence,
-  motion,
-  useIsPresent,
-  type Transition,
-  type Variants,
-} from "framer-motion";
+import { motion } from "framer-motion";
 import { Button } from "@/src/components/design/Button";
-import { PageShell } from "@/src/components/design/PageShell";
-import { EASE_OUT_EXPO, useMotionConfig } from "@/src/hooks/useMotionConfig";
+import { useNavLock } from "@/src/components/design/NavLock";
+import { DURATION, EASE_OUT } from "@/src/components/design/motion";
+import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import { SetupIndex } from "@/src/components/setup/SetupIndex";
 import { DevAppInstructions } from "@/src/components/setup/DevAppInstructions";
 import { ClientIdStep } from "@/src/components/setup/ClientIdStep";
@@ -43,50 +31,19 @@ const LABELS = STEPS.map((s) => s.label);
 type Problem = { field?: string; form?: string };
 type Busy = false | "checking" | "saving";
 
-const SHIFT = 16;
-const swap: Variants = {
-  enter: (dir: number) => ({ opacity: 0, x: dir * SHIFT }),
-  center: { opacity: 1, x: 0 },
-  exit: (dir: number) => ({ opacity: 0, x: dir * -SHIFT }),
-};
-
-// The leaving step keeps its space out of the flow (popLayout) and out of
-// reach: no clicks, no focus, not read out alongside the new one.
-function StepSection({
-  ref,
-  dir,
-  transition,
-  children,
-}: {
-  ref?: Ref<HTMLElement>;
-  dir: number;
-  transition: { enter: Transition; exit: Transition };
-  children: ReactNode;
-}) {
-  const present = useIsPresent();
-  return (
-    <motion.section
-      ref={ref}
-      custom={dir}
-      variants={swap}
-      initial="enter"
-      animate="center"
-      exit="exit"
-      transition={present ? transition.enter : transition.exit}
-      inert={!present}
-      aria-hidden={present ? undefined : true}
-    >
-      {children}
-    </motion.section>
-  );
-}
+// A new card face nudges 8px in the way you are going. The old one leaves at
+// once: fading both overlaps two titles (and the taller one hangs out of the
+// card), and focus lands in the new field immediately.
+const SHIFT = 8;
 
 export default function SetupPage() {
   const router = useRouter();
-  const { reduced, spring } = useMotionConfig();
+  const { reduced } = useMotionConfig();
   const [idx, setIdx] = useState(0);
-  // +1 forward, -1 back: the steps slide the way you are going.
+  // +1 forward, -1 back: the card face nudges the way you are going.
   const [dir, setDir] = useState(1);
+  // The first face arrives with the file's own entrance, not the swap.
+  const [moved, setMoved] = useState(false);
   const [values, setValues] = useState<SetupValues>({
     clientId: "",
     anthropicKey: "",
@@ -96,6 +53,7 @@ export default function SetupPage() {
   const [busy, setBusy] = useState<Busy>(false);
   const primaryRef = useRef<HTMLButtonElement>(null);
   const step = STEPS[idx];
+  useNavLock(busy !== false);
 
   useEffect(() => {
     fetch("/api/config")
@@ -109,6 +67,7 @@ export default function SetupPage() {
 
   function go(to: number) {
     setDir(to > idx ? 1 : -1);
+    setMoved(true);
     setIdx(to);
     setProblem({});
   }
@@ -118,10 +77,11 @@ export default function SetupPage() {
     setProblem({});
   }
 
-  function back() {
-    // Back disappears on the first step, which has no field to take focus.
-    if (idx === 1) primaryRef.current?.focus();
-    go(idx - 1);
+  // Back, or an earlier card's tab. The first card has no field to take
+  // focus, and the control that had it (Back, the tab) is about to go.
+  function back(to: number) {
+    if (to === 0) primaryRef.current?.focus();
+    go(to);
   }
 
   async function keyIsGood(): Promise<boolean> {
@@ -189,6 +149,13 @@ export default function SetupPage() {
   }
 
   const fieldProps = { error: problem.field, busy: busy !== false };
+  // The step's busy label, held in reserve so the button keeps its width.
+  const busyLabel =
+    step.id === "anthropic"
+      ? "Checking…"
+      : step.id === "prefix"
+        ? "Saving…"
+        : null;
   const primaryLabel =
     busy === "checking"
       ? "Checking…"
@@ -199,23 +166,57 @@ export default function SetupPage() {
           : step.id === "anthropic" && problem.form
             ? "Try again"
             : "Continue";
-  const transition = reduced
-    ? { enter: { duration: 0 }, exit: { duration: 0 } }
-    : {
-        enter: { x: spring, opacity: { duration: 0.3, ease: EASE_OUT_EXPO } },
-        exit: { duration: 0.15, ease: EASE_OUT_EXPO },
-      };
 
   return (
-    <PageShell>
-      <div className="grid gap-8 lg:grid-cols-[11rem_minmax(0,36rem)] lg:gap-x-20">
-        <SetupIndex steps={LABELS} current={idx} />
-        <form noValidate onSubmit={submit} className="relative min-w-0">
-          <AnimatePresence mode="popLayout" initial={false} custom={dir}>
-            <StepSection key={step.id} dir={dir} transition={transition}>
-              <h1 className="mb-10 text-balance font-[family-name:var(--font-display)] text-display-2 tracking-tight text-[var(--color-text-primary)]">
+    // The shop counter: no site nav here, so the counter is the whole ground
+    // and the card file is dealt onto it.
+    <main className="min-h-dvh bg-counter bg-[image:var(--grain)]">
+      <div className="page-frame pt-8 pb-section tab:pt-section">
+        <motion.div
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={
+            reduced
+              ? { duration: DURATION.reduced }
+              : { duration: DURATION.scene, ease: EASE_OUT }
+          }
+          className="mx-auto max-w-[46rem]"
+        >
+          <SetupIndex
+            steps={LABELS}
+            current={idx}
+            locked={busy !== false}
+            onBack={back}
+          />
+          <form
+            noValidate
+            onSubmit={submit}
+            className="rounded-[3px] border border-rule-strong bg-card p-4 pt-6 tab:p-12"
+          >
+            <motion.section
+              key={step.id}
+              initial={
+                !moved
+                  ? false
+                  : reduced
+                    ? { opacity: 0 }
+                    : { opacity: 0, x: dir * SHIFT }
+              }
+              animate={{ opacity: 1, x: 0 }}
+              transition={
+                reduced
+                  ? { duration: DURATION.reduced }
+                  : { duration: DURATION.state, ease: EASE_OUT }
+              }
+            >
+              <h1 className="text-balance font-display text-display-3 text-ink">
                 {step.title}
               </h1>
+              {/* The index card's head rule, edge to edge. */}
+              <div
+                aria-hidden
+                className="-mx-4 mt-4 mb-6 h-px bg-rule tab:-mx-12 tab:mt-6 tab:mb-8"
+              />
               {step.id === "intro" && <DevAppInstructions />}
               {step.id === "client" && (
                 <ClientIdStep
@@ -238,40 +239,59 @@ export default function SetupPage() {
                   {...fieldProps}
                 />
               )}
-            </StepSection>
-          </AnimatePresence>
-          {/* Outside the swap, so the buttons glide to their new place
-              instead of vanishing with the old step. */}
-          <motion.div
-            layout={reduced ? false : "position"}
-            transition={spring}
-            className="mt-12"
-          >
-            <div className="-ml-1 flex items-baseline gap-8">
-              <Button ref={primaryRef} type="submit" disabled={busy !== false}>
-                {primaryLabel}
-              </Button>
-              {idx > 0 && (
+            </motion.section>
+            {/* Outside the keyed face, so the same buttons (and focus on them)
+                survive a step change. */}
+            <div className="pt-8 tab:pt-12">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 tab:gap-x-8">
                 <Button
-                  variant="ghost"
-                  onClick={back}
-                  disabled={busy !== false}
+                  ref={primaryRef}
+                  type="submit"
+                  busy={busy !== false}
                 >
-                  Back
+                  {busyLabel ? (
+                    <span className="grid justify-items-center">
+                      <span className="col-start-1 row-start-1">
+                        {primaryLabel}
+                      </span>
+                      <span
+                        aria-hidden
+                        className="invisible col-start-1 row-start-1"
+                      >
+                        {busyLabel}
+                      </span>
+                    </span>
+                  ) : (
+                    primaryLabel
+                  )}
                 </Button>
+                {idx > 0 && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => back(idx - 1)}
+                    disabled={busy !== false}
+                  >
+                    Back
+                  </Button>
+                )}
+              </div>
+              {/* A busy button's new label isn't announced. */}
+              <p role="status" className="sr-only">
+                {busy === "checking"
+                  ? "Checking the key with Anthropic…"
+                  : busy === "saving"
+                    ? "Saving the settings…"
+                    : ""}
+              </p>
+              {problem.form && (
+                <p role="alert" className="mt-3 text-danger">
+                  {problem.form}
+                </p>
               )}
             </div>
-            {problem.form && (
-              <p
-                role="alert"
-                className="mt-4 px-1 text-sm text-[var(--color-danger)]"
-              >
-                {problem.form}
-              </p>
-            )}
-          </motion.div>
-        </form>
+          </form>
+        </motion.div>
       </div>
-    </PageShell>
+    </main>
   );
 }

@@ -28,9 +28,10 @@ export function AnthropicKeyStep({
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
-        className="font-[family-name:var(--font-mono)]"
+        className="font-mono"
       />
-      <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
+      {/* Not the Input's hint: the field's description stays its error alone. */}
+      <p className="mt-4 text-ink-2">
         Get one at{" "}
         <ExternalLink href="https://console.anthropic.com">
           console.anthropic.com
