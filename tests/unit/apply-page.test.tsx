@@ -31,6 +31,8 @@ import {
 } from "@/src/components/design/NavLock";
 
 const AT = "2026-09-01T00:00:00.000Z";
+const SYNC_LINE =
+  "Apply makes each playlist match exactly: tracks added by hand in Spotify are removed.";
 
 function category(name: string, playlistId: string | null = null) {
   return {
@@ -299,17 +301,18 @@ describe("/apply before the write", () => {
     ).toBeInTheDocument();
   });
 
-  it("says existing playlists are topped up, never doubled", async () => {
+  // The sync line under it already says an existing playlist is matched
+  // exactly, so "Nothing is added twice." would say it again.
+  it("counts the playlists that already exist, once", async () => {
     await loaded(
       library({
         categories: { c1: category("Dusk", "pl-1"), c2: category("Rain") },
       }),
     );
     expect(
-      sentence(
-        "3 tracks into 1 new private playlist and 1 you already have. Nothing is added twice.",
-      ),
+      sentence("3 tracks into 1 new private playlist and 1 you already have."),
     ).toBeInTheDocument();
+    expect(screen.getByText(SYNC_LINE)).toBeInTheDocument();
   });
 
   it("groups thousands", async () => {
@@ -340,6 +343,13 @@ describe("/apply before the write", () => {
     expect(
       screen.getByText("Each playlist's sleeve becomes its Spotify cover."),
     ).toBeInTheDocument();
+  });
+
+  // Spec §8.1: Apply now takes out songs added by hand. Said once, before
+  // the only click that does it.
+  it("says, once, that Apply makes each playlist match exactly", async () => {
+    await loaded();
+    expect(screen.getAllByText(SYNC_LINE)).toHaveLength(1);
   });
 
   // The manifest is home's press list: every sleeve as a proof, no links out
@@ -505,6 +515,14 @@ describe("/apply while writing", () => {
         "Keep this page open: covers go on after the last playlist.",
       ),
     ).toBeInTheDocument();
+  });
+
+  // The run's header mirrors the ready one line for line, so the list under
+  // it doesn't move when Apply is pressed.
+  it("keeps the match-exactly line while it writes", async () => {
+    await loaded();
+    await userEvent.click(apply());
+    expect(screen.getAllByText(SYNC_LINE)).toHaveLength(1);
   });
 
   // Spec §7.1: a cover upload during the write races Apply's cache writes.

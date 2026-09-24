@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dataDir } from "@/src/lib/config/paths";
 import { readCache, CacheVersionMismatch } from "@/src/lib/cache";
 import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
+import { readBodyCapped } from "@/src/lib/http/read-body";
 import { withSpotify } from "@/src/lib/spotify/client";
 import { RefreshRevokedError } from "@/src/lib/spotify/refresh";
 import {
@@ -29,30 +30,6 @@ const BodySchema = z.object({
 
 // The image plus room for the JSON around it.
 const MAX_BODY_BYTES = MAX_COVER_BASE64_BYTES + 1024;
-
-// Stops reading past maxBytes, so an oversized body is never held in memory.
-// null = too large.
-async function readBodyCapped(
-  req: Request,
-  maxBytes: number,
-): Promise<string | null> {
-  if (Number(req.headers.get("content-length")) > maxBytes) return null;
-  if (!req.body) return "";
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > maxBytes) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf-8");
-}
 
 function parseJson(raw: string): unknown {
   try {
@@ -88,12 +65,14 @@ export async function POST(req: Request) {
   }
   const playlistId = cache.categories[categoryId]?.spotify_playlist_id;
   if (!playlistId) return fail(404, "no_playlist");
-  if (!cache.auth) return fail(401, "reconnect");
+  // Without the cookie only the stored refresh token can get a token.
+  const session = parseSession(req);
+  if (!session && !cache.auth) return fail(401, "reconnect");
 
   // An expired cookie makes withSpotify refresh and re-save cache.json. That
   // write can race a running Apply's: see foundation-data.md, "Known hazard".
   try {
-    await withSpotify(parseSession(req), (token) =>
+    await withSpotify(session, (token) =>
       uploadPlaylistCover(playlistId, jpegBase64, token),
     );
   } catch (err) {

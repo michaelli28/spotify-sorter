@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { motion } from "framer-motion";
 import { PageShell } from "@/src/components/design/PageShell";
 import { ActionBar } from "@/src/components/design/ActionBar";
@@ -22,6 +29,8 @@ import { useArmed } from "@/src/components/apply/useArmed";
 import { useCoverRun } from "@/src/components/apply/useCoverRun";
 import { useFollowRun } from "@/src/components/apply/useFollowRun";
 import { usePrintPacer } from "@/src/components/apply/usePrintPacer";
+import { useRemovePlaylists } from "@/src/components/apply/useRemovePlaylists";
+import { RemovePlaylistsDialog } from "@/src/components/apply/RemovePlaylistsDialog";
 import {
   coverNotice,
   coverStatus,
@@ -85,12 +94,22 @@ function Facts({ plan: { tracks, toCreate, toUpdate } }: { plan: ApplyPlan }) {
           {toCreate === 0 && `${plural(toUpdate, "playlist")} `}you already have
         </>
       )}
-      .{toUpdate > 0 && " Nothing is added twice."}
+      .
     </>
   );
 }
 
 const LEDE = "mt-4 max-w-2xl text-lead text-ink-2";
+
+// Spec §8.1: Apply replaces what's in each playlist it already made, which
+// also says nothing is added twice. The run repeats it, so the list under the
+// header doesn't move when Apply is pressed.
+const SYNC_LINE = (
+  <p className="mt-1 max-w-2xl text-ink-2">
+    Apply makes each playlist match exactly: tracks added by hand in Spotify are
+    removed.
+  </p>
+);
 
 // Spec §3.4: Apply also replaces each playlist's cover, so the confirmation names it.
 const COVER_LINE = (
@@ -181,6 +200,24 @@ export default function ApplyPage() {
 
   // Covers upload after the write, one at a time: still work, still locked.
   useNavLock(view === "running" || tally.running);
+
+  // Spec §8.2: after a removal the page reads the library again and shows
+  // what's left to write, so any credits give way to the manifest.
+  const resetCovers = covers.reset;
+  const afterRemoval = useCallback(() => {
+    setRun({ kind: "idle" });
+    setProgress(null);
+    setRetrying(false);
+    resetCovers();
+    setReads((n) => n + 1);
+  }, [resetCovers]);
+  const removal = useRemovePlaylists(afterRemoval);
+  // Removing writes the cache: never beside Apply's writes or a cover upload.
+  const canRemove =
+    plan !== null &&
+    (view === "ready" ||
+      view === "empty" ||
+      (view === "done" && !tally.running));
 
   // The control that was pressed is gone after each of these swaps; the new
   // title is where a keyboard or screen-reader user picks up.
@@ -304,6 +341,7 @@ export default function ApplyPage() {
           <p className={`${LEDE} min-h-[1lh]`}>
             {plan && <Facts plan={plan} />}
           </p>
+          {SYNC_LINE}
           {COVER_LINE}
         </motion.div>
       );
@@ -354,6 +392,7 @@ export default function ApplyPage() {
           <p className={LEDE}>
             <Facts plan={plan} />
           </p>
+          {SYNC_LINE}
           {/* In the cover line's place: the browser uploads the covers
               after `done`, so a closed tab gets none. */}
           <p className="mt-1 max-w-2xl text-ink-2">
@@ -464,9 +503,19 @@ export default function ApplyPage() {
         />
       )}
 
-      {view === "done" && plan && (
-        <CreditsFoot prefix={plan.prefix} />
+      {/* One foot for every view, so the button keeps its place (and focus
+          comes back to it) when a removal turns the credits into the manifest. */}
+      {((view === "done" && plan) || canRemove) && (
+        <footer className="mt-section border-t border-rule pt-6">
+          {view === "done" && plan && <CreditsFoot prefix={plan.prefix} />}
+          {canRemove && (
+            <Button variant="danger" onClick={removal.open}>
+              Remove SpotifySorter playlists…
+            </Button>
+          )}
+        </footer>
       )}
+      <RemovePlaylistsDialog removal={removal} prefix={plan?.prefix ?? ""} />
     </PageShell>
   );
 }

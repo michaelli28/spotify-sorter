@@ -14,7 +14,14 @@ import type { ApplyResult } from "@/src/lib/pipeline/apply";
 const rows = [{ name: "Dusk" }, { name: "Rain" }, { name: "Haze" }];
 
 function result(over: Partial<ApplyResult> = {}): ApplyResult {
-  return { created: 3, updated: 0, tracks_added: 9, playlists: [], ...over };
+  return {
+    created: 3,
+    updated: 0,
+    tracks_added: 9,
+    tracks_removed: 0,
+    playlists: [],
+    ...over,
+  };
 }
 
 describe("sleeveStates", () => {

@@ -32,6 +32,7 @@ function result(over: Partial<ApplyResult> = {}): ApplyResult {
     created: 3,
     updated: 0,
     tracks_added: 12194,
+    tracks_removed: 0,
     playlists: [
       playlist("Rain", 40),
       playlist("Dusk", 310),
@@ -147,6 +148,42 @@ describe("the close", () => {
 
   it("counts only what this run added when it topped up", () => {
     head(result({ created: 0, updated: 3, tracks_added: 50 }), 3172);
+    expect(screen.getByText("50 tracks placed.")).toBeInTheDocument();
+  });
+
+  // Spec §8.1: Apply now makes each playlist match, so it can take tracks out.
+  const closeLine = () =>
+    screen.getAllByText(/placed|removed|up to date/)[0]!.closest("p");
+
+  it("adds what the sync took out after what it placed", () => {
+    head(
+      result({ created: 0, updated: 3, tracks_added: 50, tracks_removed: 12 }),
+      3172,
+    );
+    expect(closeLine()).toHaveTextContent(
+      /^All updated · 50 tracks placed · 12 removed\.$/,
+    );
+  });
+
+  it("names the tracks when the sync only took some out", () => {
+    head(
+      result({ created: 0, updated: 3, tracks_added: 0, tracks_removed: 1 }),
+    );
+    expect(closeLine()).toHaveTextContent(/^All updated · 1 track removed\.$/);
+  });
+
+  it("prints no removed part when nothing was removed", () => {
+    head(result({ created: 0, updated: 3, tracks_added: 50 }), 3172);
+    expect(closeLine()).toHaveTextContent(/^All updated · 50 tracks placed\.$/);
+    expect(screen.getByText("50 tracks placed.").childNodes).toHaveLength(1);
+  });
+
+  // A server from before the sync sends no tracks_removed at all.
+  it("reads a done event without tracks_removed as nothing removed", () => {
+    const old: Partial<ApplyResult> = result({ tracks_added: 50 });
+    delete old.tracks_removed;
+    head(old as ApplyResult, 3172);
+    expect(screen.queryByText(/removed/)).toBeNull();
     expect(screen.getByText("50 tracks placed.")).toBeInTheDocument();
   });
 

@@ -14,6 +14,11 @@ const TRACKS = [
 
 const calls: string[] = [];
 const created = new Map<string, { name: string; uris: string[] }>();
+// Playlists taken out of the library (DELETE /me/library). Kept in `created`
+// so ids stay unique and their items stay readable, as on Spotify.
+const unfollowed = new Set<string>();
+// Each DELETE /me/library's `uris`, as sent: the spec reads them back.
+const libraryRemovals: string[] = [];
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -34,6 +39,7 @@ function spotify(method: string, path: string, body: string): unknown {
   const p = url.pathname;
   if (method === "GET" && p === "/me") return { id: USER };
   if (method === "GET" && p === "/me/playlists") {
+    // Includes the playlists Apply created during this run.
     return {
       items: [
         {
@@ -50,9 +56,16 @@ function spotify(method: string, path: string, body: string): unknown {
           items: { total: pl.uris.length },
           images: [],
         })),
-      ],
+      ].filter((pl) => !unfollowed.has(pl.id)),
       next: null,
     };
+  }
+  if (method === "DELETE" && p === "/me/library") {
+    libraryRemovals.push(url.searchParams.get("uris") ?? "");
+    for (const uri of (url.searchParams.get("uris") ?? "").split(",")) {
+      unfollowed.add(uri.replace("spotify:playlist:", ""));
+    }
+    return {};
   }
   if (method === "POST" && p === "/me/playlists") {
     const id = `new-${created.size + 1}`;
@@ -78,6 +91,11 @@ function spotify(method: string, path: string, body: string): unknown {
     const pl = created.get(items[1]!)!;
     if (method === "POST") {
       pl.uris.push(...(JSON.parse(body) as { uris: string[] }).uris);
+      return { snapshot_id: `snap-${pl.uris.length}` };
+    }
+    // Apply's sync: replace everything with the first chunk.
+    if (method === "PUT") {
+      pl.uris = [...(JSON.parse(body) as { uris: string[] }).uris];
       return { snapshot_id: `snap-${pl.uris.length}` };
     }
     return {
@@ -198,6 +216,24 @@ createServer(async (req, res) => {
     res.setHeader("content-type", "application/json");
     return res.end(JSON.stringify(calls));
   }
+  if (path === "/__library-removals") {
+    res.setHeader("content-type", "application/json");
+    return res.end(JSON.stringify(libraryRemovals));
+  }
+  // The owner adding tracks to a playlist by hand in Spotify.
+  if (method === "POST" && path === "/__hand-add") {
+    const { playlist, uris } = JSON.parse(body) as {
+      playlist: string;
+      uris: string[];
+    };
+    const pl = created.get(playlist);
+    if (!pl) {
+      res.writeHead(404);
+      return res.end(`no playlist ${playlist}`);
+    }
+    pl.uris.push(...uris);
+    return res.end("ok");
+  }
   calls.push(`${method} ${path.split("?")[0]}`);
 
   if (path.startsWith("/spotify/v1/")) {
@@ -210,7 +246,10 @@ createServer(async (req, res) => {
     }
   }
   // Apply's cover upload: Spotify answers 202 with no body.
-  if (method === "PUT" && /^\/spotify\/v1\/playlists\/[^/]+\/images$/.test(path)) {
+  if (
+    method === "PUT" &&
+    /^\/spotify\/v1\/playlists\/[^/]+\/images$/.test(path)
+  ) {
     res.writeHead(202);
     return res.end();
   }

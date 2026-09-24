@@ -41,6 +41,9 @@ export function CreditsHead({
   // tracks_added counts placements, so a song in four playlists adds four;
   // no run places more distinct songs than the playlists hold.
   const placed = Math.min(result.tracks_added, tracks);
+  // Spec §8.1: songs the sync took out of existing playlists. A server from
+  // before the sync sends none.
+  const removed = result.tracks_removed ?? 0;
   const rise = reduced ? false : { opacity: 0, y: 14 };
   const scene = { duration: DURATION.scene, ease: EASE_OUT };
 
@@ -67,7 +70,15 @@ export function CreditsHead({
           <>
             <span aria-hidden> · </span>
             {/* One text node: tests/e2e/happy-path.spec.ts finds it by text. */}
-            <span>{`${count(placed)} ${plural(placed, "track")} placed.`}</span>
+            <span>{`${count(placed)} ${plural(placed, "track")} placed${removed > 0 ? "" : "."}`}</span>
+          </>
+        )}
+        {removed > 0 && (
+          <>
+            <span aria-hidden> · </span>
+            {/* "placed · 12 removed." shares the noun; alone it needs one.
+                Never "12" at a line end with "removed." under it. */}
+            <span className="whitespace-nowrap">{`${count(removed)} ${placed > 0 ? "" : `${plural(removed, "track")} `}removed.`}</span>
           </>
         )}
       </motion.p>
@@ -121,14 +132,12 @@ export interface CreditsFootProps {
   prefix: string;
 }
 
-/** Where the credits end: the folder step. */
+/** Where the credits end: the folder step. The page's foot holds it. */
 export function CreditsFoot({ prefix }: CreditsFootProps) {
   return (
-    <footer className="mt-section border-t border-rule pt-6">
-      <p className="max-w-xl text-ink-2">
-        In Spotify desktop, select the {prefix} playlists → right-click → Add to
-        Folder.
-      </p>
-    </footer>
+    <p className="max-w-xl text-ink-2">
+      In Spotify desktop, select the {prefix} playlists → right-click → Add to
+      Folder.
+    </p>
   );
 }

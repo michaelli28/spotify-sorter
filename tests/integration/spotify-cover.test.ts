@@ -234,6 +234,16 @@ describe("POST /api/spotify/cover", () => {
     },
   );
 
+  // The cookie's token needs no refresh token: only a request without it does.
+  it("uploads with the access cookie alone, before any refresh token is stored", async () => {
+    const path = join(dir, "cache.json");
+    const cache = JSON.parse(await readFile(path, "utf-8"));
+    await writeFile(path, JSON.stringify({ ...cache, auth: null }));
+    server.use(http.put(IMAGES, () => new HttpResponse(null, { status: 202 })));
+    const res = await post({ categoryId: "c1", jpegBase64: JPEG });
+    expect(res.status).toBe(200);
+  });
+
   it("answers 502 when Spotify fails another way", async () => {
     server.use(http.put(IMAGES, () => new HttpResponse(null, { status: 500 })));
     const res = await post({ categoryId: "c1", jpegBase64: JPEG });

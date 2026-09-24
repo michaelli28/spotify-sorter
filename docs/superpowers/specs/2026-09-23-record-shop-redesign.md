@@ -178,3 +178,62 @@ stocks through the read-only harness (externals faked), then commits per unit an
    the gold set is labelled blind on /label, so it must never appear beside a category.
 8. **Top strip `end={null}`** is allowed when a label would be a guess (diff's first load) or
    nothing can be pressed (classify while it runs). The strip keeps its height.
+
+## 8. Playlist management (owner's picks, 2026-09-23 evening)
+
+| Question   | Answer                                                                                                                                                                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Folder     | **Skip it.** Spotify's Web API can neither read nor create folders ([spotify/web-api#93](https://github.com/spotify/web-api/issues/93)); the private internal API is off-limits. Sync-in-place (8.1) keeps playlists in whatever folder the owner drags them into, so no in-app note. |
+| Regenerate | **Apply keeps them in sync**: every Apply makes each playlist match exactly.                                                                                                                                                                                                          |
+| Delete all | **Recorded playlists + owned playlists whose name starts with the prefix.**                                                                                                                                                                                                           |
+| Shipping   | Commits on `feat/redesign`, pushed.                                                                                                                                                                                                                                                   |
+
+Endpoint facts, checked against developer.spotify.com on 2026-09-23 (Feb 2026 API):
+
+- Replace a playlist's items: `PUT /playlists/{id}/items`, max 100 URIs per request; add the rest with
+  `POST /playlists/{id}/items` in chunks of 100.
+- Remove playlists: `DELETE /me/library?uris=spotify:playlist:<id>,…`, max 40 URIs per request,
+  200 on success. It replaces the removed `DELETE /playlists/{id}/followers`. The reference lists
+  scopes `user-library-modify`, `user-follow-modify`, `playlist-modify-public` without saying which
+  applies to playlists, so request all three (UNVERIFIED live which one is needed). Removed playlists
+  are recoverable for 90 days at spotify.com/account/recover-playlists.
+- Cover upload stays `PUT /playlists/{id}/images` (verified; not deprecated).
+
+### 8.1 Apply syncs
+
+- In `src/lib/pipeline/apply.ts`, a playlist that already exists is made to match exactly: desired =
+  the category's real track ids at the fit; current = `listPlaylistTrackIds`. Same set → no write.
+  Otherwise replace (PUT first ≤100 URIs, POST the rest in 100s, each chunk with `withRetry429`).
+  New playlists keep today's create + add path.
+- `ApplyResult` gains `tracks_removed` (current − desired, counted as a set); the run summary and the
+  stream's `done` event carry it; the credits print "N added · M removed" (the removed part only when
+  M > 0).
+- The /apply ready state says, once, that Apply makes each playlist match exactly and that songs
+  added by hand in Spotify to these playlists are removed.
+- Orphans (playlists of categories deleted after an Apply) are not touched by Apply; Delete all
+  catches them by prefix.
+
+### 8.2 Delete all
+
+- `GET /api/spotify/managed-playlists` (Spotify reads only): `{ playlists: [{ id, name, tracks,
+source: "recorded" | "prefix" }] }`. Recorded = current categories' `spotify_playlist_id`;
+  prefix = owned playlists (`GET /me/playlists`, paginated, `owner.id === me.id`) whose name passes
+  `hasPrefix(config.prefix, name)` and isn't already recorded.
+- `POST /api/spotify/remove-playlists` `{ ids: string[] }`: `rejectUnlessFromApp`; zod; the server
+  recomputes the candidate set and answers 400 if any id is outside it (the client can never remove
+  an arbitrary playlist); removes in chunks of 40 with `withRetry429`; then clears
+  `spotify_playlist_id` on every recorded category it removed in ONE cache write that re-reads the
+  cache first; answers `{ removed, failed: [{id, reason}] }`. 403 → `{error:"missing_scope"}`,
+  revoked refresh → 401 `{error:"reconnect"}` (same contract as the cover route).
+- /apply gets a quiet danger action "Remove SpotifySorter playlists…" (no Spotify call until
+  clicked). It opens a price-tag dialog that loads the candidates, then lists every playlist by
+  name in two groups ("Made by SpotifySorter", "Also named ✨ …"), states the 90-day restore, and
+  offers a danger "Remove N playlists" with focus starting on "Not yet". Result line: "N playlists
+  removed." Errors follow the cover contract. Afterwards the page shows its nothing-on-Spotify state.
+- **Never run live.** Tests use msw / the e2e mock only.
+- Amended after review (2026-09-23): a recorded id is a candidate only if the owner owns it (checked by
+  `owner(id)`). Both routes answer `409 {error:"apply_running"}` while an Apply runs (its end-of-run
+  write would restore cleared ids); the dialog says "Apply is still writing to Spotify. Try again once
+  it's done." + Retry. The POST body is capped (`413 too_large`). The prefix group ("Named ✨ …") lists
+  first; "Made by SpotifySorter" is printed only beside it. More than 3 failures are counted, not named.
+  Apply refuses when two categories print as one playlist name.

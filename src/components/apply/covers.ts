@@ -3,24 +3,16 @@
 // fails the Apply.
 import { sleeveToJpeg } from "@/src/components/graphics/sleeve-to-jpeg";
 import type { SleeveSpec } from "@/src/lib/sleeves/spec";
+import { needsReconnect } from "./refusal";
 
 export type CoverOutcome = "ok" | "reconnect" | "failed";
 /** skipped: never tried, because an earlier upload needed a reconnect. */
 export type CoverState = "waiting" | "uploading" | "skipped" | CoverOutcome;
 
-const errorOf = (body: unknown): unknown =>
-  typeof body === "object" && body !== null && "error" in body
-    ? body.error
-    : undefined;
-
 /** Reads POST /api/spotify/cover's answer (foundation-data.md). */
 export function coverOutcome(status: number, body: unknown): CoverOutcome {
   if (status >= 200 && status < 300) return "ok";
-  const error = errorOf(body);
-  // Only a reconnect can help these; the page must not offer Retry.
-  if (status === 403 && error === "missing_scope") return "reconnect";
-  if (status === 401 && error === "reconnect") return "reconnect";
-  return "failed";
+  return needsReconnect(status, body) ? "reconnect" : "failed";
 }
 
 export interface UploadInTurn<T> {
@@ -121,7 +113,8 @@ const plural = (n: number, word: string) => (n === 1 ? word : `${word}s`);
 export function coverStatus(t: CoverTally): string {
   if (t.total === 0) return "";
   if (t.running) return `Adding covers: ${t.ok + t.failed} of ${t.total}`;
-  if (t.ok === t.total) return t.total === 1 ? "Cover added." : "Every cover added.";
+  if (t.ok === t.total)
+    return t.total === 1 ? "Cover added." : "Every cover added.";
   if (t.ok === 0) return "";
   return `${t.ok} of ${t.total} covers added.`;
 }
