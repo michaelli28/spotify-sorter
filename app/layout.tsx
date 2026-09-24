@@ -39,7 +39,8 @@ export default function RootLayout({
       lang="en"
       className={`${caprasimo.variable} ${franklin.variable} ${GeistMono.variable}`}
     >
-      <body>
+      {/* Extensions (e.g. asbplayer) add attributes to <body> before hydration; ignore that one-level mismatch. */}
+      <body suppressHydrationWarning>
         {/* One shared set of sleeve masks and patterns, referenced by every <Sleeve>. */}
         <SleeveDefs />
         <MotionRoot>
