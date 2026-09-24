@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SpotifySorter
 
-## Getting Started
+Sorts a Spotify library into mood playlists. Claude proposes the categories and scores each track against its five best fits; you set one cutoff, and Apply writes the result back to Spotify as private playlists.
 
-First, run the development server:
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm start:open   # next dev on http://127.0.0.1:3000, then opens the browser
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Home's **Set up** button walks through making a Spotify app (redirect URI `http://127.0.0.1:3000/api/auth/callback`), its Client ID, an Anthropic API key and a playlist prefix, and writes the keys to `.env.local` (shape in `.env.local.example`). Use `127.0.0.1`, not `localhost`: Spotify sign-in is tied to that address.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Everything else the app knows lives in `data/`, which is gitignored.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it works
 
-## Learn More
+1. **Sources**: pick the playlists (and Liked Songs) to sort.
+2. **Scan**: reads their tracks and artists.
+3. **Categories**: Claude proposes categories; rename, merge, recolour or add your own.
+4. **Fit**: each track's five scores; one cutoff decides what goes where, so a track can land in up to five playlists.
+5. **Apply**: one private, prefixed playlist per category, made to match it exactly — tracks added by hand in Spotify are removed.
 
-To learn more about Next.js, take a look at the following resources:
+## Tests
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm test         # vitest: temp data dir, no network
+pnpm typecheck
+pnpm lint
+pnpm exec playwright test tests/e2e/happy-path.spec.ts   # the whole flow against a mock Spotify and Anthropic
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Ears
 
-## Deploy on Vercel
+`ml/` is a separate study: a small model trained on 30-second audio previews to reproduce Claude's playlist picks. Method, numbers and caveats are in [`ml/RESULTS.md`](ml/RESULTS.md).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Status (2026-09-24)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Apply has created playlists and added tracks on a real Spotify account. Cover upload, sync removals and "Remove SpotifySorter playlists" have never succeeded against real Spotify; the tests run them against a mock.

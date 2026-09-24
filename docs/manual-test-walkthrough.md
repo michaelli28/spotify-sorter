@@ -32,7 +32,7 @@ Four things in this app are irreversible. Everything else is safe to click.
 | **Apply**                                                          | `/apply`  | It creates 41 real private playlists in your Spotify account and adds about 12,192 track slots (3,172 distinct songs). Once the write finishes, the page then uploads each playlist's sleeve as its **Spotify cover**. Nothing in the app undoes either step. The page itself is the confirmation: there is no dialog.  |
 | **Re-propose all… → Wipe & re-propose**                            | `/review` | It deletes all 41 categories **and** all 3,172 assignments (the $1.68 + $0.17 you already paid), then proposes new ones (~$0.14). It also breaks `/label`.                                                                                                                                                              |
 | **Classify → Proceed after Delete or Merge into…**                 | `/review` | A deleted or merged-away category is really removed from `cache.json`. `/label` then refuses to load until `definitions.md` matches. The price tag names what it deletes.                                                                                                                                               |
-| **Save / Can't judge / Yes / No / Accept suggestion / Accept all** | `/label`  | These append permanent lines to `data/labels/labels.jsonl`, which is append-only: no edit, no delete. **Every queue is now finished** (`GET /api/label`, ~19:13 EDT: relabel 30 of 30), so `/label` opens on "Every song is labelled." Only **Back** reaches a saved item, and saving it again appends a duplicate row. |
+| **Save / Can't judge / Yes / No / Accept suggestion / Accept all** | `/label`  | These append permanent lines to `data/labels/labels.jsonl`, which is append-only: no edit, no delete. **Every queue is now finished** (`GET /api/label`, ~19:13 EDT: relabel 30 of 30), so `/label` opens on "Every song is labelled." Only **Back** reaches a saved item, and saving it is refused: "The labelling study is finished, so this wasn't saved." |
 
 **Classify does not cost money right now.** `GET /api/status` at ~19:13 EDT reported 3,172 tracks, 41
 categories, **0 unsorted** and 0 applied. So:
@@ -521,7 +521,7 @@ Other states you won't see now:
 | When                                  | Screen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Some tracks have no category          | The title reads **"297 new tracks to sort."** Beside it on desktop (below it on a phone) is a delivery slip on card stock: the newest 8 unsorted tracks with album art, title and artist, then "and N more" under a dashed tear line. Songs in the labelling sample are left out, so the slip can list fewer, or none. The strip's button becomes **Sort N tracks**, which opens the price tag; **Proceed** → `/classify`, which **SPENDS**. If the slip fails: "Couldn't list the new tracks." with **Try again**. |
-| Tracks were removed from your sources | "12 tracks are no longer in your sources." then up to 5 titles, "… and 7 more." Once any playlist exists on Spotify, it adds "Apply never takes tracks out of your ✨ playlists."                                                                                                                                                                                                                                                                                                                                   |
+| Tracks were removed from your sources | "12 tracks are no longer in your sources." then up to 5 titles, "… and 7 more." Once any playlist exists on Spotify, it adds "Apply won't take them out of your ✨ playlists."                                                                                                                                                                                                                                                                                                                                   |
 | The Spotify check failed              | "Couldn't check Spotify for removed tracks." with **Try again**, which re-runs only that check (about 41s).                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Cache unreadable                      | "Couldn't read your library." with **Try again** in the strip.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Cache from another version            | The same title, plus "Your library file is from another version of SpotifySorter.", and **Home** in the strip.                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -574,7 +574,7 @@ categories** after a failed run, or any `/review#<id>` link (home's crate sleeve
   - the reversed tab;
   - the sleeve at 160px beside the editable name (in the display serif, on a dotted rule);
   - **Mostly**, the category's top artists;
-  - the actions **Add track · Merge into… · Delete · Close**, pinned at the top while the sheet
+  - the actions **Add example · Merge into… · Delete · Close**, pinned at the top while the sheet
     scrolls;
   - the description on a ruled index card;
   - **Colour**, with **auto · dusk · charge · glow · haze** tabs and "auto guesses haze" beside it;
@@ -595,7 +595,7 @@ categories** after a failed run, or any `/review#<id>` link (home's crate sleeve
 | **Delete**                                 | The divider is replaced by a dashed line, "Deleted X." with **Undo**. Undo reverses only that one change.                                                                                                                                                                                             | SAFE locally, **irreversible once saved**                                           |
 | **Merge into…**                            | A "Type to filter" box over the other categories. Enter merges when one match is left, otherwise it moves to the first match; the arrows walk the list; Escape cancels. It leaves "Merged X into Y." with **Undo**. The target keeps its id, and its count and bar turn pale until the next Classify. | SAFE locally, **irreversible once saved**                                           |
 | Drag a closed divider onto another (mouse) | It lifts and follows the pointer, and the strip says "Merge A into B". Dropping merges the same way. Touch and keyboard use Merge into….                                                                                                                                                              | SAFE locally                                                                        |
-| **Add track**                              | A dialog, "Add tracks to _Name_", with an autofocused "Search your scanned library…". Tick rows, then **Add N tracks** or **Cancel**. Tracks already in the category are dimmed with a small tick.                                                                                                    | SAFE, and **purely cosmetic**: `example_track_ids` are never sent to the classifier |
+| **Add example**                            | A dialog, "Add examples to _Name_", with an autofocused "Search your scanned library…". Tick rows, then **Add N examples** or **Cancel**. Songs that are already examples are dimmed with a small tick.                                                                                              | SAFE, and **purely cosmetic**: `example_track_ids` are never sent to the classifier |
 | **42 Add a category**                      | Opens a name ("e.g. trap with sad piano samples") and description ("how it feels") form. Enter or **Add** appends it with a fresh `crypto.randomUUID()`; Escape or **Cancel** closes it. Duplicate names are blocked. The new divider shows "new" instead of a count.                                 | SAFE by itself, **arms a paid re-score** (below)                                    |
 | **Classify** (strip)                       | Opens the price tag only. The strip's status says what's unsaved: "Unsaved: 1 deleted · 1 renamed · 1 new · 1 edited".                                                                                                                                                                                | SAFE                                                                                |
 | **Re-propose all…**                        | Opens the second price tag only.                                                                                                                                                                                                                                                                      | SAFE                                                                                |
@@ -686,13 +686,10 @@ categories didn't load." with **Try again**.
     answered 500." in red and stays on `/review`.
   - You pay for the call, and the saved new category breaks `/label` until `definitions.md` has
     its heading.
-- **After an Apply, saving here forgets the playlist ids.** From code, never run; irrelevant until
-  the first Apply.
-  - The save writes `spotify_playlist_id: null` for every category
-    (`src/lib/categories/patch-body.ts:38`).
-  - Home would drop back to "None on Spotify yet.".
-  - The next Apply finds playlists by exact name, so a renamed category would get a second
-    playlist.
+- **A save keeps each category's playlist link unless the category was renamed** (fixed
+  2026-09-24; before, every save unlinked all of them and Home said "None on Spotify yet.").
+  - A renamed category is unlinked, and the next Apply finds playlists by exact name, so it gets a
+    second playlist and the old one stays behind.
 - **Every visit downloads the whole cache** into the browser: all 3,172 tracks and 3,172
   assignment rows (about 1.5 MB, measured 09-22).
 
@@ -827,7 +824,7 @@ Move dialog, dragging songs, Undo, the running crate and the failures are code o
 [strip]                                                       [Apply]
 What Apply writes
 3,172 tracks into 41 new private playlists.
-Each playlist's sleeve becomes its Spotify cover.
+Each playlist's sleeve is sent as its Spotify cover. If Spotify says no, Reconnect Spotify and apply again.
 Tune the fit
 ```
 
@@ -880,7 +877,7 @@ so a retry can't re-add earlier chunks.
 
 **While it runs** (not seen now):
 
-- The title is "Placing tracks…", with the sentence and "Keep this page open: covers go on after
+- The title is "Placing tracks…", with the sentence and "Keep this page open: covers are sent after
   the last playlist."
 - The strip reads "Starting…", then "Writing 18 of 41 · <playlist name>", beside an ink progress
   band.
