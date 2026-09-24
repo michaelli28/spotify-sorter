@@ -2,6 +2,7 @@ import { withSpotify, type Session } from "@/src/lib/spotify/client";
 import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
 import { runApplyFromCache } from "@/src/lib/pipeline/apply";
 import { singleFlight } from "@/src/lib/pipeline/single-flight";
+import { whileApplyRuns } from "@/src/lib/pipeline/apply-running";
 import { jobEventStream } from "@/src/lib/pipeline/event-stream";
 
 export const dynamic = "force-dynamic";
@@ -22,18 +23,23 @@ type ApplyProgress = {
 };
 
 // A second POST (e.g. a double-click on Apply) joins the running write
-// instead of creating every playlist a second time.
+// instead of creating every playlist a second time. Playlist removal refuses
+// while it runs.
 const applyJob = singleFlight(
   (emit: (p: ApplyProgress) => void, session: Session | undefined) =>
-    withSpotify(session, (token) =>
-      runApplyFromCache({
-        accessToken: token,
-        onProgress: (stage, done, total, name) =>
-          emit({ stage, done, total, name }),
-      }),
+    whileApplyRuns(() =>
+      withSpotify(session, (token) =>
+        runApplyFromCache({
+          accessToken: token,
+          onProgress: (stage, done, total, name) =>
+            emit({ stage, done, total, name }),
+        }),
+      ),
     ),
 );
 
 export async function POST(req: Request) {
-  return rejectUnlessFromApp(req) ?? jobEventStream(applyJob(parseSession(req)));
+  return (
+    rejectUnlessFromApp(req) ?? jobEventStream(applyJob(parseSession(req)))
+  );
 }

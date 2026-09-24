@@ -1,3 +1,5 @@
+import { spotifyError } from "./errors";
+
 export interface PaginatorOpts {
   accessToken: string;
   fetchImpl?: typeof fetch;
@@ -20,7 +22,7 @@ export async function paginate<T>(
       headers: { authorization: `Bearer ${opts.accessToken}` },
     });
     if (!r.ok)
-      throw new Error(`Spotify ${r.status} on ${url}: ${await r.text()}`);
+      throw spotifyError(`Spotify ${r.status} on ${url}: ${await r.text()}`, r);
     const page = (await r.json()) as Page<T>;
     out.push(...page.items);
     url = page.next;

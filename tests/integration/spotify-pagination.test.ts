@@ -53,4 +53,23 @@ describe("paginate", () => {
       paginate("https://api.spotify.com/v1/x", { accessToken: "AT" }),
     ).rejects.toThrow(/500/);
   });
+
+  // withRetry429 and the routes' missing_scope mapping read these.
+  it("puts Spotify's status and headers on the error", async () => {
+    server.use(
+      http.get(
+        "https://api.spotify.com/v1/x",
+        () =>
+          new HttpResponse(null, {
+            status: 429,
+            headers: { "retry-after": "7" },
+          }),
+      ),
+    );
+    const err: unknown = await paginate("https://api.spotify.com/v1/x", {
+      accessToken: "AT",
+    }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 429 });
+    expect((err as { headers: Headers }).headers.get("retry-after")).toBe("7");
+  });
 });

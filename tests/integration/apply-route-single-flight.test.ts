@@ -25,7 +25,13 @@ describe("POST /api/spotify/apply", () => {
       () =>
         new Promise((resolve) => {
           finish = () =>
-            resolve({ created: 1, updated: 0, tracks_added: 2, playlists: [] });
+            resolve({
+              created: 1,
+              updated: 0,
+              tracks_added: 2,
+              tracks_removed: 0,
+              playlists: [],
+            });
         }),
     );
 

@@ -1,3 +1,4 @@
+import { spotifyError } from "./errors";
 import { paginate } from "./pagination";
 import { spotifyApi } from "./urls";
 
@@ -51,14 +52,21 @@ export async function fetchPlaylistSnapshot(
   };
 }
 
-export async function listOwnedPlaylists(
-  accessToken: string,
-): Promise<OwnedPlaylist[]> {
+export async function fetchMeId(accessToken: string): Promise<string> {
   const meRes = await fetch(spotifyApi("/me"), {
     headers: { authorization: `Bearer ${accessToken}` },
   });
-  if (!meRes.ok) throw new Error(`Failed to fetch /me: ${meRes.status}`);
-  const me = (await meRes.json()) as Me;
+  if (!meRes.ok)
+    throw spotifyError(`Failed to fetch /me: ${meRes.status}`, meRes);
+  return ((await meRes.json()) as Me).id;
+}
+
+/** `meId` saves the /me call when the caller already has it. */
+export async function listOwnedPlaylists(
+  accessToken: string,
+  meId?: string,
+): Promise<OwnedPlaylist[]> {
+  const me = { id: meId ?? (await fetchMeId(accessToken)) };
 
   const all = await paginate<RawPlaylist>(
     spotifyApi("/me/playlists?limit=50"),
