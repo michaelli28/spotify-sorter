@@ -81,13 +81,13 @@ export function TrackSearchModal({
       initialFocus={searchRef}
       title={
         <>
-          Add tracks to <em>{categoryName}</em>
+          Add examples to <em>{categoryName}</em>
         </>
       }
       actions={
         <>
           <Button onClick={commit} disabled={picked.size === 0}>
-            Add {picked.size > 0 ? `${picked.size} ` : ""}track
+            Add {picked.size > 0 ? `${picked.size} ` : ""}example
             {picked.size === 1 ? "" : "s"}
           </Button>
           <Button variant="quiet" onClick={onClose}>
@@ -107,11 +107,7 @@ export function TrackSearchModal({
           className="[&::-webkit-search-cancel-button]:appearance-none"
         />
       </div>
-      {filtered.length === 0 && (
-        <p className="py-2 text-ink-2">
-          No matches.
-        </p>
-      )}
+      {filtered.length === 0 && <p className="py-2 text-ink-2">No matches.</p>}
       <ul className="-mx-panel">
         {filtered.map((t) => {
           const isPicked = picked.has(t.id);
@@ -135,10 +131,7 @@ export function TrackSearchModal({
                     <Check strokeWidth={2.25} className="size-3.5 text-paper" />
                   )}
                   {inCat && (
-                    <Check
-                      strokeWidth={1.25}
-                      className="size-3.5 text-ink-2"
-                    />
+                    <Check strokeWidth={1.25} className="size-3.5 text-ink-2" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-semibold text-ink">
@@ -147,9 +140,9 @@ export function TrackSearchModal({
                 <span className="max-w-[40%] truncate text-ink-2">
                   {t.artist_name}
                 </span>
-                {/* A dimmed, ticked row reads as "already in"; a label ate
-                    the title's width on a phone. */}
-                {inCat && <span className="sr-only">, already in category</span>}
+                {/* A dimmed, ticked row reads as "already an example"; a label
+                    ate the title's width on a phone. */}
+                {inCat && <span className="sr-only">, already an example</span>}
               </button>
             </li>
           );

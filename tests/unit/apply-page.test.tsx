@@ -337,11 +337,14 @@ describe("/apply before the write", () => {
   });
 
   // Spec §3.4: Apply now also replaces each playlist's cover. A write the
-  // confirmation must name.
-  it("says each playlist's cover becomes its sleeve", async () => {
+  // confirmation must name — as an attempt: a token granted before covers
+  // existed gets a 403, so it can't promise the cover lands.
+  it("says each sleeve is sent as the cover, and what to do if Spotify refuses", async () => {
     await loaded();
     expect(
-      screen.getByText("Each playlist's sleeve becomes its Spotify cover."),
+      screen.getByText(
+        "Each playlist's sleeve is sent as its Spotify cover. If Spotify says no, Reconnect Spotify and apply again.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -512,7 +515,7 @@ describe("/apply while writing", () => {
     await userEvent.click(apply());
     expect(
       screen.getByText(
-        "Keep this page open: covers go on after the last playlist.",
+        "Keep this page open: covers are sent after the last playlist.",
       ),
     ).toBeInTheDocument();
   });

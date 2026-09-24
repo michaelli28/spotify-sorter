@@ -7,6 +7,7 @@ const ERROR_TEXT: Record<string, string> = {
   no_sample: "No sample yet. Run scripts/label-sample.ts first.",
   no_definitions: "No definitions yet. Write data/labels/definitions.md first.",
   relabel_not_open: "This relabel isn't open yet.",
+  study_closed: "The labelling study is finished, so this wasn't saved.",
 };
 
 type Result<T> = { ok: true; value: T } | { ok: false; message: string };

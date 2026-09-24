@@ -407,6 +407,18 @@ describe("/review with saved categories", () => {
     ]);
   });
 
+  // "Add track" only ever added an example: sorting never reads examples, so
+  // the song never reached the playlist.
+  it("adds examples, and says so, rather than promising tracks", async () => {
+    await renderReview();
+    await openRow("Emo Rap");
+    expect(screen.queryByRole("button", { name: "Add track" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Add example" }));
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(
+      /Add examples to Emo Rap/,
+    );
+  });
+
   // Enter used to do nothing while more than one category matched.
   it("moves Enter to the first match when several are left, never merging blind", async () => {
     await renderReview();

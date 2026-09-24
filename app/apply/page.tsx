@@ -111,10 +111,13 @@ const SYNC_LINE = (
   </p>
 );
 
-// Spec §3.4: Apply also replaces each playlist's cover, so the confirmation names it.
+// Spec §3.4: Apply also replaces each playlist's cover, so the confirmation
+// names it — as an attempt: the granted scope isn't stored, and a token from
+// before covers existed gets a 403.
 const COVER_LINE = (
   <p className="mt-1 max-w-2xl text-ink-2">
-    Each playlist&apos;s sleeve becomes its Spotify cover.
+    Each playlist&apos;s sleeve is sent as its Spotify cover. If Spotify says
+    no, Reconnect Spotify and apply again.
   </p>
 );
 
@@ -396,7 +399,7 @@ export default function ApplyPage() {
           {/* In the cover line's place: the browser uploads the covers
               after `done`, so a closed tab gets none. */}
           <p className="mt-1 max-w-2xl text-ink-2">
-            Keep this page open: covers go on after the last playlist.
+            Keep this page open: covers are sent after the last playlist.
           </p>
         </>
       );

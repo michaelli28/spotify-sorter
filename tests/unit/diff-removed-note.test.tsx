@@ -100,15 +100,16 @@ describe("RemovedNote", () => {
     expect(screen.queryByText(/playlists/)).toBeNull();
   });
 
-  // apply.ts only creates playlists and adds to them. It can't promise a
-  // removed track is in one (unsorted, or under the threshold), only that
-  // Apply won't take it out.
-  it("says Apply never takes tracks out once the playlists exist", async () => {
+  // Scan never drops a track from the library, so Apply keeps writing it. It
+  // can't promise a removed track is in a playlist (unsorted, or under the
+  // threshold), only that Apply won't take it out — Apply does remove songs
+  // added by hand, so the note can't say it never removes anything.
+  it("says Apply won't take the removed tracks out once the playlists exist", async () => {
     stubDiff(diff(12, EXAMPLES));
     render(<RemovedNote prefix="✨" applied />);
     expect(
       await screen.findByText(
-        "12 tracks are no longer in your sources. Apply never takes tracks out of your ✨ playlists.",
+        "12 tracks are no longer in your sources. Apply won't take them out of your ✨ playlists.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/keep/)).toBeNull();
@@ -160,7 +161,7 @@ describe("RemovedNote", () => {
     render(<RemovedNote prefix="🎧" applied />);
     expect(
       await screen.findByText(
-        /Apply never takes tracks out of your 🎧 playlists\./,
+        /Apply won't take them out of your 🎧 playlists\./,
       ),
     ).toBeInTheDocument();
   });

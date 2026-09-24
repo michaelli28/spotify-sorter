@@ -569,6 +569,37 @@ describe("POST /api/label", () => {
     expect(await writtenLines()).toEqual([]);
   });
 
+  // Back still shows the last song after the study ends, and a Save there
+  // appended a row to the labels the finished study rests on.
+  it("403s with study_closed once every queued item is labelled, writing nothing", async () => {
+    const pairRow = (
+      pair_id: string,
+      track_id: string,
+      category_id: string,
+    ) => ({
+      kind: "pair",
+      pair_id,
+      answer: "yes",
+      elapsed_ms: 900,
+      definitions_sha256: SHA,
+      track_id,
+      category_id,
+      labeled_at: T0,
+    });
+    const finished = [
+      pass1Row("t_b", T0),
+      pass1Row("t_a", T0),
+      { ...pass1Row("t_a", T0), pass: 2 },
+      pairRow("p001", "t_d", "c_lofi"),
+      pairRow("p002", "t_c", "c_dream"),
+    ];
+    await seed({ labels: finished });
+    const res = await POST(post(trackInput({ track_id: "t_b" })));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "study_closed" });
+    expect(await writtenLines()).toHaveLength(finished.length);
+  });
+
   it("404s when there is no sample", async () => {
     await seed({ sample: false });
     const res = await POST(post(trackInput()));

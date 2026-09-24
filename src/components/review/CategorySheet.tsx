@@ -197,7 +197,7 @@ export function CategorySheet({
             // One row down to the 380px sheet; wraps only on the narrowest phones.
             <div className="flex flex-wrap items-center gap-x-4 max-tab:justify-between min-[1101px]:gap-x-6">
               <Button variant="quiet" onClick={onAddTrack}>
-                Add track
+                Add example
               </Button>
               <Button
                 variant="quiet"

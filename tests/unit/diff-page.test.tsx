@@ -581,7 +581,7 @@ describe("/diff", () => {
     render(<DiffPage />);
     expect(
       await screen.findByText(
-        "2 tracks are no longer in your sources. Apply never takes tracks out of your 🎧 playlists.",
+        "2 tracks are no longer in your sources. Apply won't take them out of your 🎧 playlists.",
       ),
     ).toBeInTheDocument();
   });

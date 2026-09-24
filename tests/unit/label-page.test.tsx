@@ -398,6 +398,19 @@ describe("LabelApp: songs", () => {
     expect(screen.getByRole("heading", { name: "First Song" })).toBeVisible();
   });
 
+  it("says the study is finished when a save comes after it closed", async () => {
+    stubServer(state(), [{ status: 403, body: { error: "study_closed" } }]);
+    render(<LabelApp />);
+    await heading("First Song");
+    await userEvent.click(box("Vaporwave"));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText(
+        "The labelling study is finished, so this wasn't saved.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows why the page can't load", async () => {
     vi.stubGlobal(
       "fetch",
@@ -582,7 +595,8 @@ describe("LabelApp: gold set", () => {
     await userEvent.click(screen.getByRole("button", { name: "Gold set" }));
     await heading("Gold One");
     expect(screen.getByText("0 / 2")).toBeInTheDocument();
-    for (const b of screen.getAllByRole("checkbox")) expect(b).not.toBeChecked();
+    for (const b of screen.getAllByRole("checkbox"))
+      expect(b).not.toBeChecked();
 
     await userEvent.click(box("Trance"));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));

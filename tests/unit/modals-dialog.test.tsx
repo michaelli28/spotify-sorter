@@ -82,7 +82,7 @@ describe("TrackSearchModal", () => {
   it("is a modal dialog named for its category, with the search focused", async () => {
     renderSearch();
     expect(screen.getByRole("dialog")).toHaveAccessibleName(
-      /Add tracks to Late Night/,
+      /Add examples to Late Night/,
     );
     await waitFor(() =>
       expect(screen.getByRole("searchbox", { name: /Search/ })).toHaveFocus(),
@@ -94,9 +94,20 @@ describe("TrackSearchModal", () => {
     const add = screen.getByRole("button", { name: /^Add/ });
     expect(add).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: /Nights/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Add 1 track" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Add 1 example" }),
+    );
     expect(onAdd).toHaveBeenCalledWith(["t1"]);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  // The tick marks songs already among the examples, not songs sorted into
+  // the category.
+  it("announces a song that is already an example as one", () => {
+    renderSearch();
+    expect(
+      screen.getByRole("button", { name: /Ivy.*already an example/ }),
+    ).toBeInTheDocument();
   });
 
   it("closes on Escape", async () => {

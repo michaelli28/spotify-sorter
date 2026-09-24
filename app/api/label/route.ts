@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dataDir } from "@/src/lib/config/paths";
 import { readCache, type Cache } from "@/src/lib/cache";
 import { rejectUnlessFromApp } from "@/src/lib/http/same-origin";
+import { isLabelStudyOpen } from "@/src/lib/labeling/blind";
 import {
   DefinitionsError,
   definitionsSha256,
@@ -135,6 +136,9 @@ export async function POST(req: Request) {
 
   const sample = await readSample();
   if (!sample) return fail(404, "no_sample");
+  // The page still reaches the last song via Back once every item is done; a
+  // save there would append to the labels the finished study rests on.
+  if (!(await isLabelStudyOpen())) return fail(403, "study_closed");
   const definitions = await readDefinitionsFile();
   if (definitions === null) return fail(404, "no_definitions");
   if (input.definitions_sha256 !== definitionsSha256(definitions))

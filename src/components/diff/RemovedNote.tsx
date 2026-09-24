@@ -133,11 +133,12 @@ function Removed({
   const more = count - examples.length;
   return (
     <>
-      {/* apply.ts only adds. It can't say a removed track was ever placed
-          (unsorted, or under the threshold), only that Apply won't drop it. */}
+      {/* Scan never drops a track from the library, so Apply keeps writing
+          it. It can't say a removed track was ever placed (unsorted, or under
+          the threshold), only that Apply won't drop it. */}
       <p>
         {applied
-          ? `${gone} Apply never takes tracks out of your ${prefix} playlists.`
+          ? `${gone} Apply won't take them out of your ${prefix} playlists.`
           : gone}
       </p>
       {examples.length > 0 && (
