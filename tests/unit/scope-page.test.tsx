@@ -247,7 +247,7 @@ describe("/scope loading and failure", () => {
     stubApi({ playlists: () => reply({ playlists: [] }) });
     render(<ScopePage />);
     expect(
-      await screen.findByText("You haven't made any playlists on Spotify yet."),
+      await screen.findByText("No other playlists to read."),
     ).toBeInTheDocument();
     expect(box("Liked Songs")).toBeChecked();
     expect(screen.queryByRole("searchbox")).toBeNull();
@@ -688,7 +688,9 @@ describe("/scope rows and preview", () => {
       }),
     );
     const dialog = await screen.findByRole("dialog", { name: "Late Night" });
-    expect(await within(dialog).findByText("1 of 12 tracks")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("1 of 12 tracks"),
+    ).toBeInTheDocument();
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Close" }),
     );

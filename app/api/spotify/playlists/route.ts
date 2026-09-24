@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
+import { join } from "node:path";
+import { dataDir } from "@/src/lib/config/paths";
+import { readCache } from "@/src/lib/cache";
 import { withSpotify } from "@/src/lib/spotify/client";
+import { appPlaylistMatcher } from "@/src/lib/spotify/library";
 import { listOwnedPlaylists } from "@/src/lib/spotify/playlists";
 
 export async function GET(req: Request) {
@@ -10,7 +14,14 @@ export async function GET(req: Request) {
     : undefined;
   try {
     const playlists = await withSpotify(session, listOwnedPlaylists);
-    return NextResponse.json({ playlists });
+    // The app's own playlists aren't sources: scanning them feeds its output
+    // back in as input.
+    const isAppPlaylist = appPlaylistMatcher(
+      await readCache(join(dataDir(), "cache.json")),
+    );
+    return NextResponse.json({
+      playlists: playlists.filter((p) => !isAppPlaylist(p)),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

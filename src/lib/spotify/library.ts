@@ -59,26 +59,41 @@ async function fetchRecordedPlaylist(
   };
 }
 
-// The playlists "Remove SpotifySorter playlists" may touch: every category's
-// recorded playlist, then the owner's own playlists named with the prefix
-// (orphans of deleted categories). Only ever the owner's own playlists.
-export async function listManagedPlaylists(
-  accessToken: string,
-  cache: {
-    config: Pick<Cache["config"], "prefix">;
-    categories: Record<string, { spotify_playlist_id: string | null }>;
-  },
-): Promise<ManagedPlaylist[]> {
-  const meId = await fetchMeId(accessToken);
-  const owned = await listOwnedPlaylists(accessToken, meId);
-  const ownedById = new Map(owned.map((p) => [p.id, p]));
-  const recordedIds = [
+type ManagedCache = {
+  config: Pick<Cache["config"], "prefix">;
+  categories: Record<string, { spotify_playlist_id: string | null }>;
+};
+
+function recordedPlaylistIds(cache: ManagedCache): string[] {
+  return [
     ...new Set(
       Object.values(cache.categories)
         .map((c) => c.spotify_playlist_id)
         .filter((id): id is string => Boolean(id)),
     ),
   ];
+}
+
+// SpotifySorter's own output, by the rule listManagedPlaylists uses: a
+// category's recorded playlist, or one named with the prefix.
+export function appPlaylistMatcher(
+  cache: ManagedCache,
+): (p: { id: string; name: string }) => boolean {
+  const recorded = new Set(recordedPlaylistIds(cache));
+  return (p) => recorded.has(p.id) || hasPrefix(cache.config.prefix, p.name);
+}
+
+// The playlists "Remove SpotifySorter playlists" may touch: every category's
+// recorded playlist, then the owner's own playlists named with the prefix
+// (orphans of deleted categories). Only ever the owner's own playlists.
+export async function listManagedPlaylists(
+  accessToken: string,
+  cache: ManagedCache,
+): Promise<ManagedPlaylist[]> {
+  const meId = await fetchMeId(accessToken);
+  const owned = await listOwnedPlaylists(accessToken, meId);
+  const ownedById = new Map(owned.map((p) => [p.id, p]));
+  const recordedIds = recordedPlaylistIds(cache);
 
   const recorded: ManagedPlaylist[] = [];
   for (const id of recordedIds) {

@@ -395,9 +395,9 @@ export default function ScopePage() {
           </ul>
 
           {playlists.length === 0 ? (
-            <p className="text-ink-2">
-              You haven&apos;t made any playlists on Spotify yet.
-            </p>
+            // SpotifySorter's own playlists are left out, so "none" can't
+            // claim there are none on Spotify.
+            <p className="text-ink-2">No other playlists to read.</p>
           ) : (
             <div className="desk:col-start-2 desk:row-start-2">
               {visible.length === 0 ? (
