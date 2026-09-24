@@ -22,7 +22,11 @@ import {
 import clsx from "clsx";
 import { Button } from "@/src/components/design/Button";
 import { DURATION, EASE_OUT } from "@/src/components/design/motion";
-import { Tab, TemperatureKey } from "@/src/components/graphics/Tab";
+import {
+  Tab,
+  TemperatureKey,
+  TemperatureLegend,
+} from "@/src/components/graphics/Tab";
 import { DESK_UP, useMediaQuery } from "@/src/hooks/useMediaQuery";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import {
@@ -108,6 +112,9 @@ export function CategoryIndex({
   const scroller = useRef<HTMLDivElement>(null);
   const focusAfter = useFocusAfterRender(rootRef);
   const sheetId = useId();
+  // The key's "what they mean": the legend opens under the column head.
+  const legendId = useId();
+  const [explained, setExplained] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   // The 240ms a sleeve is morphing from its row into the side sheet.
   const [flying, setFlying] = useState(false);
@@ -348,7 +355,12 @@ export function CategoryIndex({
           {/* Full-bleed on phones, so a lifted divider mustn't widen the page. */}
           <div className="rounded-[3px] border border-rule-strong bg-paper-deep px-4 pt-3 pb-4 max-tab:-mx-gutter max-tab:overflow-x-clip max-tab:rounded-none max-tab:border-x-0 max-tab:px-gutter">
             <div className="flex items-center justify-between gap-4 px-3 text-ink-2 max-tab:px-0.5">
-              <TemperatureKey className="max-tab:gap-x-2.5" />
+              <TemperatureKey
+                className="max-tab:gap-x-2.5"
+                explained={explained}
+                explainId={legendId}
+                onExplain={() => setExplained((open) => !open)}
+              />
               {placed && (
                 <span className="mono whitespace-nowrap">
                   <span className="max-tab:hidden">Tracks at </span>fit{" "}
@@ -356,6 +368,15 @@ export function CategoryIndex({
                 </span>
               )}
             </div>
+            {explained && (
+              <TemperatureLegend
+                id={legendId}
+                className="mx-3 mt-3 mb-1 max-tab:mx-0.5"
+              >
+                Colours are guessed from each category’s name. Open a category
+                to change its Colour.
+              </TemperatureLegend>
+            )}
             {/* Tabs stand 16px proud: the 8px gap tucks each over the card behind. */}
             <div className="relative">
               <ol className="flex flex-col gap-2 pt-6">

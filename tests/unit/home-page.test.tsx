@@ -465,9 +465,11 @@ describe("Home, safety", () => {
   });
 });
 
+// The divider tabs only: the key's "what they mean" is a button on the crate too.
 const crateTabs = () =>
   within(screen.getByRole("group", { name: "Flip through categories" }))
     .getAllByRole("button")
+    .filter((b) => b.dataset.crateTab === "true")
     .map((b) => b.getAttribute("aria-label"));
 
 describe("Home, the crate", () => {
@@ -577,9 +579,7 @@ describe("Home, what Apply writes", () => {
     await renderHome();
     expect(
       screen.getByRole("region", { name: "What Apply writes" }),
-    ).toHaveTextContent(
-      "2 playlists · 2 adds at fit 65 · 1 track fits none",
-    );
+    ).toHaveTextContent("2 playlists · 2 adds at fit 65 · 1 track fits none");
   });
 
   it("counts the empty playlist Apply still makes for a category no track fits", async () => {

@@ -824,6 +824,47 @@ describe("/review sheet", () => {
     );
   });
 
+  it("explains the tab colours from the bin's key", async () => {
+    await renderReview();
+    expect(
+      screen.queryByRole("region", { name: "What the tab colours mean" }),
+    ).toBeNull();
+    const button = screen.getByRole("button", { name: "what they mean" });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const legend = screen.getByRole("region", {
+      name: "What the tab colours mean",
+    });
+    expect(
+      within(legend).getByText("Soft and dreamy: lo-fi, acoustic, ballads."),
+    ).toBeInTheDocument();
+    expect(
+      within(legend).getByText(/guessed from each category’s name/i),
+    ).toBeInTheDocument();
+    await userEvent.click(button);
+    expect(
+      screen.queryByRole("region", { name: "What the tab colours mean" }),
+    ).toBeNull();
+  });
+
+  it("says what the picked colour means under the picker", async () => {
+    await renderReview();
+    await openRow("Dream Pop");
+    // Auto shows its guess's meaning ("dream" is a haze cue).
+    expect(
+      screen.getByText("Soft and dreamy: lo-fi, acoustic, ballads."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(colour()).getByRole("radio", { name: "charge" }),
+    );
+    expect(
+      screen.getByText("High energy: EDM, trap, hyperpop, bass."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Soft and dreamy: lo-fi, acoustic, ballads."),
+    ).toBeNull();
+  });
+
   it("reprints the sleeve when a colour is picked, and saves it", async () => {
     await renderReview();
     await openRow("Dream Pop");

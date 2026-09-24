@@ -1,6 +1,7 @@
 "use client";
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -27,7 +28,11 @@ import {
 } from "@/src/components/graphics/Crate";
 import { CRATE, crateLayout } from "@/src/components/graphics/crate-geometry";
 import { Sleeve } from "@/src/components/graphics/Sleeve";
-import { Tab, TemperatureKey } from "@/src/components/graphics/Tab";
+import {
+  Tab,
+  TemperatureKey,
+  TemperatureLegend,
+} from "@/src/components/graphics/Tab";
 import { useMotionConfig } from "@/src/hooks/useMotionConfig";
 import {
   crateKeyTarget,
@@ -78,6 +83,9 @@ export function HomeCrate({ entries }: HomeCrateProps) {
   // Only flips that leave focus elsewhere (‹ ›, a swipe) need saying: a tab
   // that takes focus already speaks its own label.
   const [said, setSaid] = useState("");
+  // The key's "what they mean": the legend opens under the crate.
+  const [explained, setExplained] = useState(false);
+  const legendId = useId();
   // Read once, on the client; the server's markup is the same either way
   // (every `initial` below is fixed), so only the timing differs.
   const [play] = useState(
@@ -300,9 +308,28 @@ export function HomeCrate({ entries }: HomeCrateProps) {
           </AnimatePresence>
         </div>
         <CrateSlats>
-          <TemperatureKey />
+          <TemperatureKey
+            explained={explained}
+            explainId={legendId}
+            onExplain={() => setExplained((open) => !open)}
+          />
         </CrateSlats>
       </CrateFigure>
+      {explained && (
+        <TemperatureLegend
+          id={legendId}
+          className="mt-4 rounded-[3px] border border-rule-strong bg-card px-4 py-3"
+        >
+          Colours are guessed from each category’s name. Change one on{" "}
+          <Link
+            href="/review"
+            className="text-ink underline decoration-rule-strong underline-offset-4 hover:decoration-ink"
+          >
+            Categories
+          </Link>
+          .
+        </TemperatureLegend>
+      )}
 
       <figcaption className="mt-4 grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-x-2">
         <Button

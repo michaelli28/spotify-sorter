@@ -43,10 +43,11 @@ const ENTRIES = [
   entry("c3", 3, "Stutter House Rhythmic", 14),
 ];
 
+// The divider tabs only: the key's "what they mean" is a button on the crate too.
 const tabs = () =>
-  within(
-    screen.getByRole("group", { name: "Flip through categories" }),
-  ).getAllByRole("button");
+  within(screen.getByRole("group", { name: "Flip through categories" }))
+    .getAllByRole("button")
+    .filter((b) => b.dataset.crateTab === "true");
 const pressed = () =>
   tabs().find((t) => t.getAttribute("aria-pressed") === "true");
 const sleeveLink = () => screen.getByRole("link", { name: /in Categories$/ });
@@ -65,6 +66,29 @@ describe("<HomeCrate>", () => {
       screen.getByRole("link", { name: "02 Bedroom Pop Intimacy" }),
     ).toHaveAttribute("href", "/review#c2");
     expect(screen.getByText("1,442")).toBeInTheDocument();
+  });
+
+  it("explains the tab colours from the key on the crate", async () => {
+    render(<HomeCrate entries={ENTRIES} />);
+    const button = screen.getByRole("button", { name: "what they mean" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(button);
+    const legend = screen.getByRole("region", {
+      name: "What the tab colours mean",
+    });
+    expect(
+      within(legend).getByText(
+        "Dark and heavy: emo, phonk, metal, heartbreak.",
+      ),
+    ).toBeInTheDocument();
+    // The note sends you to where a colour is changed.
+    expect(
+      within(legend).getByRole("link", { name: "Categories" }),
+    ).toHaveAttribute("href", "/review");
+    await userEvent.click(button);
+    expect(
+      screen.queryByRole("region", { name: "What the tab colours mean" }),
+    ).toBeNull();
   });
 
   it("is one Tab stop: only the pulled divider's tab takes focus", () => {

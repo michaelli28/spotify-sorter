@@ -2,7 +2,11 @@
 import { useId, type CSSProperties } from "react";
 import clsx from "clsx";
 import { tabTint } from "@/src/lib/sleeves/inks";
-import { TEMPERATURES, type Temperature } from "@/src/lib/sleeves/temperature";
+import {
+  TEMPERATURES,
+  TEMPERATURE_MEANINGS,
+  type Temperature,
+} from "@/src/lib/sleeves/temperature";
 
 export interface ColourPickerProps {
   /** The owner's override; undefined = Auto. */
@@ -24,6 +28,9 @@ export function ColourPicker({ value, guess, onChange }: ColourPickerProps) {
   const labelId = useId();
   const guessId = useId();
   const name = useId();
+  const meaningId = useId();
+  // Auto means whatever it guesses.
+  const shown = value ?? guess;
   const options = [AUTO, ...TEMPERATURES] as const;
   return (
     <div role="radiogroup" aria-labelledby={labelId} className="mt-8">
@@ -82,6 +89,11 @@ export function ColourPicker({ value, guess, onChange }: ColourPickerProps) {
           );
         })}
       </div>
+      {/* What the chosen colour means, in words: the tint alone says nothing. */}
+      <p id={meaningId} aria-live="polite" className="mt-3 text-ink-2">
+        <span className="mono text-ink">{shown}</span>{" "}
+        {TEMPERATURE_MEANINGS[shown]}
+      </p>
     </div>
   );
 }

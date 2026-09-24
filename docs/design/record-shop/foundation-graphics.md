@@ -105,7 +105,13 @@ identical "Open in Spotify" links; `link={false}` takes no label.
 <Tab catalogueNo={null} temperature={null} size="review" />           // unnumbered blank (review, proposing)
 <Tab catalogueNo={7} temperature="haze" size="crate">{number}{count}</Tab> // children replace the number
 <TemperatureKey className="text-[var(--ink-2)]" />                    // dusk · charge · glow · haze
+<TemperatureKey explained={open} explainId={id} onExplain={toggle} />  // + "what they mean"
+{open && <TemperatureLegend id={id}>page note</TemperatureLegend>}     // one line per colour
 ```
+
+`TEMPERATURE_MEANINGS` (`src/lib/sleeves/temperature.ts`) is the one source for what each colour
+means; the legend and the review Colour picker both print it. Home and the review bin offer the
+legend; classify's key is decoration and doesn't.
 
 A `<span>` with no positioning of its own. `size="review"` is 16px tall. `size="crate"` is 18u
 tall and fills its `CrateTab`'s width. `reversed` is the open or current tab: `--tab-pressed`,

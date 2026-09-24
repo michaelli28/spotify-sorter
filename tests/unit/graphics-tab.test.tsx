@@ -1,7 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { Tab, TemperatureKey } from "@/src/components/graphics/Tab";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  Tab,
+  TemperatureKey,
+  TemperatureLegend,
+} from "@/src/components/graphics/Tab";
 import { tabTint } from "@/src/lib/sleeves/inks";
+import {
+  TEMPERATURES,
+  TEMPERATURE_MEANINGS,
+} from "@/src/lib/sleeves/temperature";
 
 const fill = (el: HTMLElement) => el.style.getPropertyValue("--tab-fill");
 
@@ -87,7 +96,59 @@ describe("<Tab>", () => {
   });
 });
 
+describe("<TemperatureLegend>", () => {
+  it("says what each colour means, in the key's order, with the page's note", () => {
+    render(
+      <TemperatureLegend id="legend">
+        Guessed from each category&apos;s name.
+      </TemperatureLegend>,
+    );
+    const legend = screen.getByRole("region", {
+      name: "What the tab colours mean",
+    });
+    const terms = within(legend).getAllByRole("term");
+    expect(terms.map((t) => t.textContent)).toEqual([...TEMPERATURES]);
+    for (const t of TEMPERATURES) {
+      expect(
+        within(legend).getByText(TEMPERATURE_MEANINGS[t]),
+      ).toBeInTheDocument();
+    }
+    expect(
+      within(legend).getByText("Guessed from each category's name."),
+    ).toBeInTheDocument();
+  });
+
+  it("has a plain meaning for every temperature", () => {
+    expect(Object.keys(TEMPERATURE_MEANINGS)).toEqual([...TEMPERATURES]);
+    for (const t of TEMPERATURES) {
+      expect(TEMPERATURE_MEANINGS[t]).toMatch(/^[A-Z].+\.$/);
+    }
+  });
+});
+
 describe("<TemperatureKey>", () => {
+  it("offers what the colours mean only when the page can show it", async () => {
+    const onExplain = vi.fn();
+    const { rerender } = render(<TemperatureKey />);
+    expect(screen.queryByRole("button", { name: "what they mean" })).toBeNull();
+    rerender(
+      <TemperatureKey
+        explained={false}
+        explainId="legend"
+        onExplain={onExplain}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "what they mean" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAttribute("aria-controls", "legend");
+    await userEvent.click(button);
+    expect(onExplain).toHaveBeenCalledOnce();
+    rerender(
+      <TemperatureKey explained explainId="legend" onExplain={onExplain} />,
+    );
+    expect(button).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("names the four temperatures in order, each on its tab tint", () => {
     render(<TemperatureKey />);
     const list = screen.getByRole("list", { name: "Tab colours" });
