@@ -156,7 +156,10 @@ export default function ReviewPage() {
       const before = await fetch("/api/cache");
       if (!before.ok) throw new Error(`The server answered ${before.status}.`);
       const { categories } = (await before.json()) as {
-        categories: Record<string, unknown>;
+        categories: Record<
+          string,
+          { name: string; spotify_playlist_id: string | null }
+        >;
       };
       const previous = new Set(Object.keys(categories));
       hadCategories = previous.size > 0;
@@ -164,7 +167,11 @@ export default function ReviewPage() {
       await send(
         "/api/cache",
         "PATCH",
-        buildCategoriesPatch(snapshot, new Date().toISOString()),
+        buildCategoriesPatch({
+          draft: snapshot,
+          saved: categories,
+          now: new Date().toISOString(),
+        }),
       );
     } catch (err) {
       setWork(null);

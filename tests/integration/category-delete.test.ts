@@ -97,7 +97,13 @@ async function storedCategories(): Promise<string[]> {
 describe("saving the edited category list", () => {
   it("drops a category the editor removed", async () => {
     const res = await PATCH(
-      patchRequest(buildCategoriesPatch(draft(["c_keep", "c_also"]), NOW)),
+      patchRequest(
+        buildCategoriesPatch({
+          draft: draft(["c_keep", "c_also"]),
+          saved: {},
+          now: NOW,
+        }),
+      ),
     );
     expect(res.status).toBe(200);
     expect(await storedCategories()).toEqual(["c_also", "c_keep"]);
@@ -105,7 +111,13 @@ describe("saving the edited category list", () => {
 
   it("keeps every assignment — only categories are replaced", async () => {
     await PATCH(
-      patchRequest(buildCategoriesPatch(draft(["c_keep", "c_also"]), NOW)),
+      patchRequest(
+        buildCategoriesPatch({
+          draft: draft(["c_keep", "c_also"]),
+          saved: {},
+          now: NOW,
+        }),
+      ),
     );
     const cache = (await (await GET()).json()) as {
       assignments: Record<string, { matches: unknown[] }>;
@@ -123,10 +135,62 @@ describe("saving the edited category list", () => {
         example_track_ids: [],
       },
     ];
-    await PATCH(patchRequest(buildCategoriesPatch(renamed, NOW)));
+    await PATCH(
+      patchRequest(
+        buildCategoriesPatch({ draft: renamed, saved: {}, now: NOW }),
+      ),
+    );
     const cache = (await (await GET()).json()) as {
       categories: Record<string, { name: string }>;
     };
     expect(cache.categories.c_keep!.name).toBe("Renamed");
+  });
+
+  // The page saves with the categories it just read, as /review does. Home's
+  // "on Spotify" count reads these links back.
+  it("keeps a playlist link through the save; a renamed category loses its link", async () => {
+    await writeFile(
+      join(dir, "cache.json"),
+      JSON.stringify({
+        ...seedCache(),
+        categories: {
+          c_keep: { ...category("Keep Me"), spotify_playlist_id: "pl_keep" },
+          c_also: { ...category("Also Keep"), spotify_playlist_id: "pl_also" },
+        },
+      }),
+    );
+    const read = async () =>
+      (await (await GET()).json()) as {
+        categories: Record<
+          string,
+          { name: string; spotify_playlist_id: string | null }
+        >;
+      };
+    const draft = [
+      {
+        id: "c_keep",
+        name: "Keep Me",
+        description: "d",
+        example_track_ids: [],
+      },
+      {
+        id: "c_also",
+        name: "Renamed",
+        description: "d",
+        example_track_ids: [],
+      },
+    ];
+    await PATCH(
+      patchRequest(
+        buildCategoriesPatch({
+          draft,
+          saved: (await read()).categories,
+          now: NOW,
+        }),
+      ),
+    );
+    const { categories } = await read();
+    expect(categories.c_keep!.spotify_playlist_id).toBe("pl_keep");
+    expect(categories.c_also!.spotify_playlist_id).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
 import type { Temperature } from "@/src/lib/sleeves/temperature";
 import type { DraftCategory } from "./merge";
 
+type SavedCategory = { name: string; spotify_playlist_id: string | null };
+
 /**
  * The PATCH body that saves the edited category list.
  *
@@ -10,17 +12,22 @@ import type { DraftCategory } from "./merge";
  * still creates a playlist for it. Clearing first makes the posted map the
  * whole truth, which is what the editor on screen already claims to be.
  */
-export function buildCategoriesPatch(
-  draft: readonly DraftCategory[],
-  now: string,
-): {
+export function buildCategoriesPatch({
+  draft,
+  saved,
+  now,
+}: {
+  draft: readonly DraftCategory[];
+  saved: Record<string, SavedCategory>;
+  now: string;
+}): {
   _clear: ["categories"];
   categories: Record<
     string,
     {
       name: string;
       description: string;
-      spotify_playlist_id: null;
+      spotify_playlist_id: string | null;
       created_at: string;
       example_track_ids: string[];
       temperature?: Temperature;
@@ -35,7 +42,12 @@ export function buildCategoriesPatch(
         {
           name: c.name,
           description: c.description,
-          spotify_playlist_id: null,
+          // Apply never renames a Spotify playlist: a renamed category drops
+          // its link so Apply looks the new name up instead.
+          spotify_playlist_id:
+            saved[c.id]?.name === c.name
+              ? saved[c.id]!.spotify_playlist_id
+              : null,
           created_at: now,
           example_track_ids: c.example_track_ids,
           // Absent, never null: "Auto (guess)" clears by leaving it out.

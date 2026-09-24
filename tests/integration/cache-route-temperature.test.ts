@@ -50,19 +50,30 @@ async function saved(id = "c1"): Promise<Record<string, unknown>> {
 describe("temperature through PATCH /api/cache", () => {
   it("persists an override posted by the editor", async () => {
     const res = await patch(
-      buildCategoriesPatch([draft({ temperature: "dusk" })], NOW),
+      buildCategoriesPatch({
+        draft: [draft({ temperature: "dusk" })],
+        saved: {},
+        now: NOW,
+      }),
     );
     expect(res.status).toBe(200);
     expect((await saved()).temperature).toBe("dusk");
   });
 
   it("keeps the override across a rename", async () => {
-    await patch(buildCategoriesPatch([draft({ temperature: "dusk" })], NOW));
     await patch(
-      buildCategoriesPatch(
-        [draft({ name: "Bedroom Pop Intimacy", temperature: "dusk" })],
-        NOW,
-      ),
+      buildCategoriesPatch({
+        draft: [draft({ temperature: "dusk" })],
+        saved: {},
+        now: NOW,
+      }),
+    );
+    await patch(
+      buildCategoriesPatch({
+        draft: [draft({ name: "Bedroom Pop Intimacy", temperature: "dusk" })],
+        saved: {},
+        now: NOW,
+      }),
     );
     const c1 = await saved();
     expect(c1.name).toBe("Bedroom Pop Intimacy");
@@ -70,16 +81,34 @@ describe("temperature through PATCH /api/cache", () => {
   });
 
   it("removes the key when the owner picks Auto (guess)", async () => {
-    await patch(buildCategoriesPatch([draft({ temperature: "dusk" })], NOW));
-    await patch(buildCategoriesPatch([draft()], NOW));
+    await patch(
+      buildCategoriesPatch({
+        draft: [draft({ temperature: "dusk" })],
+        saved: {},
+        now: NOW,
+      }),
+    );
+    await patch(
+      buildCategoriesPatch({ draft: [draft()], saved: {}, now: NOW }),
+    );
     expect(await saved()).not.toHaveProperty("temperature");
     const raw = JSON.parse(await readFile(join(dir, "cache.json"), "utf-8"));
     expect(raw.categories.c1).not.toHaveProperty("temperature");
   });
 
   it("refuses an unknown value and leaves the stored override alone", async () => {
-    await patch(buildCategoriesPatch([draft({ temperature: "glow" })], NOW));
-    const body = buildCategoriesPatch([draft()], NOW);
+    await patch(
+      buildCategoriesPatch({
+        draft: [draft({ temperature: "glow" })],
+        saved: {},
+        now: NOW,
+      }),
+    );
+    const body = buildCategoriesPatch({
+      draft: [draft()],
+      saved: {},
+      now: NOW,
+    });
     const bad = {
       ...body,
       categories: { c1: { ...body.categories.c1, temperature: "sunny" } },
@@ -93,7 +122,11 @@ describe("temperature through PATCH /api/cache", () => {
 
 describe("temperature in the editor's draft helpers", () => {
   it("buildCategoriesPatch omits the key when there is no override", () => {
-    const body = buildCategoriesPatch([draft()], NOW);
+    const body = buildCategoriesPatch({
+      draft: [draft()],
+      saved: {},
+      now: NOW,
+    });
     expect(body.categories.c1).not.toHaveProperty("temperature");
   });
 

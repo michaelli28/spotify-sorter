@@ -501,6 +501,38 @@ describe("/review Classify", () => {
     expect(writes().some((c) => c.url === "/api/llm/reclassify")).toBe(false);
   });
 
+  // A save with no edits used to unlink every playlist, and home then said
+  // "None on Spotify yet" while they were all still on Spotify.
+  it("keeps every category's Spotify playlist through a save with no edits", async () => {
+    const linked = Object.fromEntries(
+      Object.entries(CATEGORIES).map(([id, c]) => [
+        id,
+        { ...c, spotify_playlist_id: `pl_${id}` },
+      ]),
+    );
+    // The links appear only in the read just before the save (Apply may have
+    // linked them in another tab since this page loaded).
+    server.cache = [
+      { body: cacheBody() },
+      { body: cacheBody({ categories: linked }) },
+    ];
+    await renderReview();
+    await priceIt();
+    await userEvent.click(screen.getByRole("button", { name: "Proceed" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/classify"));
+    const [patch] = writes();
+    const posted = (
+      patch!.body as {
+        categories: Record<string, { spotify_playlist_id: string | null }>;
+      }
+    ).categories;
+    expect(
+      Object.fromEntries(
+        Object.entries(posted).map(([id, c]) => [id, c.spotify_playlist_id]),
+      ),
+    ).toEqual({ c1: "pl_c1", c2: "pl_c2", c3: "pl_c3" });
+  });
+
   it("prices only the tracks without a category", async () => {
     server.cache = [
       { body: cacheBody({ assignments: placed(TRACK_IDS.slice(0, 2700)) }) },
