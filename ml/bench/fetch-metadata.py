@@ -1,8 +1,7 @@
 """S12 half A, step 1: MTG-Jamendo metadata and the official split-0.
 
 Every number the recon established is RE-DERIVED here from the files rather
-than trusted, because the published figures disagree with each other and an
-interviewer will pick exactly at that seam:
+than trusted, because the published figures disagree with each other:
 
   - The TSV carries 59 mood/theme tags; the SPLITS carry 56. Three tags
     (ambiental, horror, mellow) are dropped by the split generator, and the 504

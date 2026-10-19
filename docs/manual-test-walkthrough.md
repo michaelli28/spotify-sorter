@@ -529,8 +529,8 @@ Other states you won't see now:
 On the first read the strip holds no button (a guess could be wrong). "Reading your library…"
 appears in it only if the read is slow.
 
-`/diff` has **no cross-site guard**. It's a read, so that's harmless, but an interviewer might spot
-the inconsistency.
+`/diff` has **no cross-site guard**. It's a read, so that's harmless, but it is
+inconsistent with the guarded routes.
 
 **Checked:** seen for the "Nothing new to sort." state at 1440px and 390px, and for the removed-tracks
 note (from the harness's fake diff answer). The waiting slip and the error screens are code only:

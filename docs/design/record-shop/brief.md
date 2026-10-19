@@ -6,11 +6,10 @@
 
 **Theme: paper by day, an evening stock by night.**
 
-- **Day (default):** risograph ink only reads as ink when it lands on paper, where two inks overprint (multiply) into a third. A paper page also stays legible on an interview screen-share in a lit room.
+- **Day (default):** risograph ink only reads as ink when it lands on paper, where two inks overprint (multiply) into a third. A paper page also stays legible on a screen-share in a lit room.
 - **Evening stock:** the owner sorts in the evening and at 1am with headphones on, and impeccable's theme table says "music app for headphone listening at night → dark". So when macOS is in dark mode (`prefers-color-scheme: dark`), the shop switches stock:
   - The navy ink becomes the paper, and a cream "riso white" becomes the ink.
   - The printed objects keep their own stock: sleeves, divider tabs and album art.
-- **Action for the owner:** `.impeccable.md` says "dark by default". If this direction wins, that line becomes "paper by day, evening stock when the OS is dark".
 
 **Mockups** (all numbers and songs are real, from `context/data.json`):
 
@@ -581,7 +580,7 @@ Every must-fix from both critiques is applied. Where I applied one differently f
    - The worst sharing is 3 categories, the minimum possible. Those three differ in ink B, which dominates at 36 to 48px in every motif (grooves, strokes, the record, the dark spine).
 4. **The plain sleeve drops the category's ink (product 6, which conflicts with a craft "keep").** The craft critic asked to keep "the white-label fallback printed in the category's ink". The product critic's must-fix asked for a flat square with no rings and no tint. The must-fix wins: the fallback only ever appears inside its own category, so the tint repeated what the page already says, and its rings read as a groove sleeve and as the brand mark.
 5. **Review tabs stop staggering (product 3), and tuck over the card behind (craft 2).** Both are applied together: one column at the name's edge, 16px tall, tucked over the card behind, so it adds 0px. The stagger (the bin look) moves to where it belongs, the home crate, where tabs are a physical index rather than a column you scan.
-6. **Theme: an evening stock rather than asking the owner to accept light-only (product 10).** It is built, contrast-checked (0 failures) and shot (`shots/*-night-fold-*.png`). Rewriting `.impeccable.md`'s "dark by default" line is still the owner's call if this direction wins.
+6. **Theme: an evening stock rather than asking the owner to accept light-only (product 10).** It is built, contrast-checked (0 failures) and shot (`shots/*-night-fold-*.png`).
 7. **The static drag hint left the column head (craft 4 put the key there).** Today's app has no static drag hint; the status line speaks only during a drag. The column head now carries the key and the cutoff label. The hint became the status line's idle text, so it stays on screen whenever nothing is pending.
 8. **Home keeps no site nav (craft 5, product 5a).** The masthead nav was removed rather than the spec changed. The routes list is the home's only set of links.
 
