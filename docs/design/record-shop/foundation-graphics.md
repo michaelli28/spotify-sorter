@@ -1,7 +1,7 @@
 # Foundation: graphics (F2)
 
 The sleeve generator, tabs, album art, crate and press list for the Record Shop redesign.
-Spec: `docs/superpowers/specs/2026-09-23-record-shop-redesign.md` §6 F2. Design: `brief.md` §4.1–4.4.
+Design: `brief.md` §4.1–4.4.
 
 **Setup, once (F1 owns both files; neither is done yet):**
 

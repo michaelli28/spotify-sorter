@@ -460,8 +460,7 @@ goes to `/review` instead. It uses `router.replace`, so browser Back from `/diff
 
 **Gotchas:**
 
-- **Don't close or reload the tab mid-scan.** `docs/superpowers/plans/2026-05-15-cache-efficiency-plan.md`
-  records the hypothesis that Next aborts the route handler when the browser drops the EventSource,
+- **Don't close or reload the tab mid-scan.** The working hypothesis is that Next aborts the route handler when the browser drops the EventSource,
   before `writeCache` runs.
 - ~~**The progress total jumps 106 → 105 on the first tick.**~~ FIXED in the redesign. Every
   `playlists` event now carries the same total (the playlists in scope, without Liked Songs), and

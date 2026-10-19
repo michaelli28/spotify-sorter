@@ -1,7 +1,6 @@
 # Record Shop — data and server foundation (F3)
 
-What the page agents build against. Spec: `docs/superpowers/specs/2026-09-23-record-shop-redesign.md`
-§3.3, §3.4, §3.6–3.8, §4.3, §4.4, §8 (playlist sync and removal).
+What the page agents build against, including playlist sync and removal.
 
 ## Never run live
 
