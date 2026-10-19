@@ -47,3 +47,10 @@ next-env.d.ts
 .env.*.local
 /playwright-report
 /test-results
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
